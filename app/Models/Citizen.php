@@ -12,7 +12,7 @@ class Citizen extends Model
 
     public static function fingerprint(string $value): string
     {
-        return hash_hmac('sha256', $value, (string) config('app.key'));
+        return hash_hmac('sha256', $value, (string) config('siagakarta.data_fingerprint_key', config('app.key')));
     }
 
     public function setNik(string $nik): void

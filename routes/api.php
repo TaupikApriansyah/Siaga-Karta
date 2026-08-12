@@ -5,9 +5,11 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\InfaqController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProgramController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\SystemController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,42 +22,72 @@ Route::prefix('public')->group(function(){
     Route::get('/infaq/qr',[InfaqController::class,'publicQr'])->middleware('throttle:60,1');
     Route::post('/infaq/payments',[InfaqController::class,'submitPayment'])->middleware('throttle:5,1');
 });
-Route::post('/auth/login',[AuthController::class,'login'])->middleware('throttle:6,1');
+
+Route::post('/auth/login',[AuthController::class,'login'])->middleware('audit.login.throttle');
 
 Route::middleware('api.token')->group(function(){
     Route::get('/auth/me',[AuthController::class,'me']);
+    Route::post('/auth/refresh',[AuthController::class,'refresh'])->middleware('throttle:12,1');
     Route::post('/auth/logout',[AuthController::class,'logout']);
-    Route::get('/dashboard',[DashboardController::class,'index']);
-    Route::get('/reports',[ReportController::class,'index']);
-    Route::get('/reports/{report}',[ReportController::class,'show']);
-    Route::post('/reports/manual',[ReportController::class,'storeManual'])->middleware('role:petugas,admin');
-    Route::post('/reports/{report}/assign',[ReportController::class,'assign'])->middleware('role:petugas,admin');
-    Route::patch('/reports/{report}/status',[ReportController::class,'updateStatus'])->middleware('role:petugas,admin');
-    Route::get('/reports/{report}/ktp',[ReportController::class,'ktp'])->middleware('role:petugas,admin');
-    Route::post('/reports/{report}/verify',[ReportController::class,'verify'])->middleware('role:admin');
-    Route::get('/ambulances',[AmbulanceController::class,'index']);
-    Route::post('/ambulances',[AmbulanceController::class,'store'])->middleware('role:admin');
-    Route::patch('/ambulances/{ambulance}',[AmbulanceController::class,'update'])->middleware('role:admin');
-    Route::get('/programs',[ProgramController::class,'index']);
-    Route::post('/programs',[ProgramController::class,'store'])->middleware('role:admin');
-    Route::patch('/programs/{program}',[ProgramController::class,'update'])->middleware('role:admin');
-    Route::get('/exports/ambulans.csv',[ExportController::class,'ambulanceCsv']);
-    Route::get('/exports/ambulans.pdf',[ExportController::class,'ambulancePdf']);
-    Route::get('/exports/pelayanan.csv',[ExportController::class,'serviceCsv']);
-    Route::get('/exports/pelayanan.pdf',[ExportController::class,'servicePdf']);
-    Route::middleware('role:admin')->group(function(){
-        Route::get('/transactions',[FinanceController::class,'index']);
-        Route::post('/transactions',[FinanceController::class,'store']);
-        Route::post('/transactions/{transaction}/verify',[FinanceController::class,'verify']);
-        Route::post('/transactions/{transaction}/reject',[FinanceController::class,'reject']);
-        Route::get('/transactions/{transaction}/proof',[InfaqController::class,'proof']);
-        Route::get('/infaq/settings',[InfaqController::class,'settings']);
-        Route::post('/infaq/settings',[InfaqController::class,'updateSettings']);
-        Route::get('/infaq/qr',[InfaqController::class,'privateQr']);
-        Route::get('/exports/keuangan.csv',[ExportController::class,'financeCsv']);
-        Route::get('/exports/keuangan.pdf',[ExportController::class,'financePdf']);
+
+    Route::middleware('permission:dashboard.view')->group(function(){
+        Route::get('/dashboard',[DashboardController::class,'index']);
+        Route::get('/sync',[SystemController::class,'sync']);
+        Route::get('/activity',[SystemController::class,'activity']);
+        Route::get('/notifications',[NotificationController::class,'index']);
+        Route::post('/notifications/read-all',[NotificationController::class,'readAll']);
+        Route::post('/notifications/{notification}/read',[NotificationController::class,'read']);
+    });
+
+    Route::middleware('permission:operations.view')->group(function(){
+        Route::get('/reports',[ReportController::class,'index']);
+        Route::get('/reports/{report}',[ReportController::class,'show']);
+        Route::get('/reports/{report}/ktp',[ReportController::class,'ktp']);
+        Route::get('/ambulances',[AmbulanceController::class,'index']);
+        Route::get('/programs',[ProgramController::class,'index']);
+        Route::get('/exports/ambulans.csv',[ExportController::class,'ambulanceCsv']);
+        Route::get('/exports/ambulans.pdf',[ExportController::class,'ambulancePdf']);
+        Route::get('/exports/pelayanan.csv',[ExportController::class,'serviceCsv']);
+        Route::get('/exports/pelayanan.pdf',[ExportController::class,'servicePdf']);
+    });
+
+    Route::middleware('permission:operations.manage')->group(function(){
+        Route::post('/reports/manual',[ReportController::class,'storeManual']);
+        Route::post('/reports/{report}/assign',[ReportController::class,'assign']);
+        Route::patch('/reports/{report}/status',[ReportController::class,'updateStatus']);
+    });
+    Route::post('/reports/{report}/verify',[ReportController::class,'verify'])->middleware('permission:operations.verify');
+
+    Route::middleware('permission:ambulance.manage')->group(function(){
+        Route::post('/ambulances',[AmbulanceController::class,'store']);
+        Route::patch('/ambulances/{ambulance}',[AmbulanceController::class,'update']);
+    });
+    Route::middleware('permission:program.manage')->group(function(){
+        Route::post('/programs',[ProgramController::class,'store']);
+        Route::patch('/programs/{program}',[ProgramController::class,'update']);
+    });
+    Route::middleware('permission:users.manage')->group(function(){
         Route::get('/users',[UserController::class,'index']);
         Route::post('/users',[UserController::class,'store']);
         Route::patch('/users/{user}',[UserController::class,'update']);
+    });
+    Route::get('/system/health',[SystemController::class,'health'])->middleware('permission:system.health');
+
+    Route::middleware('permission:finance.view')->group(function(){
+        Route::get('/transactions',[FinanceController::class,'index']);
+        Route::get('/transactions/{transaction}',[FinanceController::class,'show']);
+        Route::get('/transactions/{transaction}/proof',[InfaqController::class,'proof']);
+        Route::get('/exports/keuangan.csv',[ExportController::class,'financeCsv']);
+        Route::get('/exports/keuangan.pdf',[ExportController::class,'financePdf']);
+    });
+    Route::middleware('permission:finance.manage')->group(function(){
+        Route::post('/transactions',[FinanceController::class,'store']);
+        Route::post('/transactions/{transaction}/verify',[FinanceController::class,'verify']);
+        Route::post('/transactions/{transaction}/reject',[FinanceController::class,'reject']);
+    });
+    Route::middleware('permission:payment.manage')->group(function(){
+        Route::get('/infaq/settings',[InfaqController::class,'settings']);
+        Route::post('/infaq/settings',[InfaqController::class,'updateSettings']);
+        Route::get('/infaq/qr',[InfaqController::class,'privateQr']);
     });
 });

@@ -16,6 +16,12 @@ if [ "${1:-}" = "apache2-foreground" ]; then
     exit 1
   fi
 
+  if [ -z "${DATA_FINGERPRINT_KEY:-}" ] || [ "${#DATA_FINGERPRINT_KEY}" -lt 32 ]; then
+    echo "ERROR: DATA_FINGERPRINT_KEY wajib secret acak minimal 32 karakter dan harus persisten." >&2
+    echo "Contoh generate: php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'" >&2
+    exit 1
+  fi
+
   if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     tries=0
     until php artisan migrate --force; do

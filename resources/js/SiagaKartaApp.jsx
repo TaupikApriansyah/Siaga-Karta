@@ -5,43 +5,24 @@ import {
   Home, Activity, Calendar, FileText, FileSpreadsheet, Users, 
   Settings, LogOut, Truck, Plus, Eye, Download, ShieldCheck, 
   User, ShieldAlert, Send, MessageCircle, QrCode, Upload, Clock, ReceiptText,
-  Ambulance, ArrowRight, HeartHandshake
+  Ambulance, ArrowRight, HeartHandshake, Bell
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import api, { errorMessage, getToken, setToken } from './api';
+import api, { errorMessage, getToken, setToken, getAuthMeta, setAuthMeta, newRequestUuid, requestSharedSession, broadcastSession, subscribeAuth } from './api';
 
-const initialDB = {
-  laporan: [
-    { id: 'LPR-20260812-001', nama: 'Budi Santoso', kontak: '08123456789', lokasi: 'Jl. Merdeka No 12', kondisi: 'Kecelakaan motor', kategori: 'ambulans', jenis: 'darurat', status: 'menunggu', tgl: '2026-08-12T09:10:00', sumber: 'website' },
-    { id: 'JDL-20260812-002', nama: 'Siti Aminah', kontak: '08198765432', lokasi: 'Perum Sari Indah', kondisi: 'Kontrol rutin', kategori: 'ambulans', jenis: 'terjadwal', status: 'selesai', tgl: '2026-08-10T08:00:00', sumber: 'website' }
-  ],
-  ambulans: [
-    { id: 'KT-01', nopol: 'Z 1992 AB', kapasitas: 2, status: 'tersedia' },
-    { id: 'KT-02', nopol: 'Z 8812 XY', kapasitas: 1, status: 'dipesan' }
-  ],
-  driver: [
-    { id: 'D-01', nama: 'Agus Riyanto', status: 'aktif' },
-    { id: 'D-02', nama: 'Hendra', status: 'aktif' }
-  ],
-  transaksi: [
-    { id: 'TRX-001', tipe: 'pemasukan', kategori: 'donasi_program', nominal: 1500000, status: 'verified', tgl: '2026-08-01' },
-    { id: 'TRX-002', tipe: 'pengeluaran', kategori: 'bbm', nominal: 250000, status: 'verified', tgl: '2026-08-05' }
-  ],
-  program: [
-    { id: 'PRG-01', nama: 'Bantuan Warga Sakit Menahun', target: 5000000, terkumpul: 3500000, tersalurkan: 1000000, status: 'aktif', img: '/siaga-karta-community.png' },
-    { id: 'PRG-02', nama: 'Santunan Yatim Piatu', target: 10000000, terkumpul: 8500000, tersalurkan: 8000000, status: 'aktif', img: '/hero-ambulance.png' }
-  ]
-};
+const emptyChartData = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(name=>({name,darurat:0,sosial:0}));
 
-const chartData = [
-  { name: 'Sen', darurat: 4, sosial: 2 },
-  { name: 'Sel', darurat: 3, sosial: 1 },
-  { name: 'Rab', darurat: 2, sosial: 4 },
-  { name: 'Kam', darurat: 6, sosial: 3 },
-  { name: 'Jum', darurat: 5, sosial: 2 },
-  { name: 'Sab', darurat: 8, sosial: 5 },
-  { name: 'Min', darurat: 3, sosial: 2 },
-];
+const mapReportRow = (r) => ({
+  id:r.code, nama:r.citizen?.name||'-', lokasi:r.pickup_location, kondisi:r.medical_condition, jenis:r.type, kategori:r.category,
+  status:r.status, tgl:r.created_at, sumber:r.source, scheduled_at:r.scheduled_at, service_start_at:r.service_start_at,
+  service_end_at:r.service_end_at, ambulance:r.ambulance?.code||null, driver:r.driver?.name||null,
+});
+const mapTransactionRow = (t) => ({
+  db_id:t.id,id:t.code,tipe:t.type,kategori:t.category,nominal:t.amount,status:t.status,
+  tgl:typeof t.transaction_date==='string'?t.transaction_date.slice(0,10):t.transaction_date,source:t.source,
+  payer_name:t.payer_name,payer_phone_last4:t.payer_phone_last4,has_proof:Boolean(t.has_proof??t.payment_proof_path),
+  rejection_reason:t.rejection_reason,description:t.description,
+});
 
 const Button = ({ children, variant = 'primary', size = 'md', className = '', ...props }) => {
   const base = "inline-flex items-center justify-center font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100";
@@ -61,6 +42,47 @@ const Card = ({ children, className = '', noPadding = false }) => (
     {children}
   </div>
 );
+
+const FieldGuide = ({ label, help, required = false, children, className = '' }) => (
+  <div className={`space-y-1.5 ${className}`}>
+    <label className="block text-sm font-bold text-slate-800">{label}{required && <span className="text-red-600"> *</span>}</label>
+    {help && <p className="text-xs leading-5 text-slate-500">{help}</p>}
+    {children}
+  </div>
+);
+
+class DashboardErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: error?.message || 'Komponen dashboard gagal dimuat.' };
+  }
+  componentDidCatch(error) {
+    console.error('Dashboard render error:', error);
+  }
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, message: '' });
+    }
+  }
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <Card className="border-red-200 bg-red-50">
+        <div className="flex items-start gap-4">
+          <div className="rounded-2xl bg-red-100 p-3 text-red-700"><AlertCircle className="h-6 w-6"/></div>
+          <div className="min-w-0">
+            <h3 className="font-black text-red-950">Halaman gagal ditampilkan</h3>
+            <p className="mt-1 text-sm leading-6 text-red-800">{this.state.message}</p>
+            <p className="mt-2 text-xs text-red-700">Pilih menu lain lalu kembali lagi. Dashboard tidak lagi berubah menjadi halaman putih saat satu komponen mengalami error.</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+}
 
 const ConfirmModal = ({ isOpen, title, msg, confirmText, cancelText, onConfirm, onCancel, type = 'danger' }) => {
   if (!isOpen) return null;
@@ -199,36 +221,75 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
   const [trackCode, setTrackCode] = useState('');
   const [trackResult, setTrackResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [infaqInfo, setInfaqInfo] = useState({ active:false, title:'Infaq Siaga Karta', description:'', payment_instructions:'', has_qr:false, qr_url:null });
+  const [infaqInfo, setInfaqInfo] = useState({ active:false, title:'Infaq Siaga Karta', description:'', payment_instructions:'', has_qr:false, qr_url:null, bank_name:null, account_number:null, account_name:null });
   const [infaqSubmitting, setInfaqSubmitting] = useState(false);
   const [infaqCode, setInfaqCode] = useState('');
+  const [reportError, setReportError] = useState('');
+  const [reportDirty, setReportDirty] = useState(false);
+  const [infaqError, setInfaqError] = useState('');
+  const reportRequestUuidRef = useRef(newRequestUuid());
+  const infaqRequestUuidRef = useRef(newRequestUuid());
+
+  const loadInfaqInfo = async () => {
+    try { const {data}=await api.get('/public/infaq'); setInfaqInfo(data.infaq || {}); } catch {}
+  };
+  useEffect(() => { loadInfaqInfo(); }, []);
+  const openInfaq = async () => { setInfaqCode(''); setInfaqError(''); await loadInfaqInfo(); setShowInfaq(true); };
 
   useEffect(() => {
-    api.get('/public/infaq').then(({ data }) => setInfaqInfo(data.infaq || {})).catch(() => {});
-  }, []);
+    const warnUnsaved = (event) => {
+      if (!reportDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnUnsaved);
+    return () => window.removeEventListener('beforeunload', warnUnsaved);
+  }, [reportDirty]);
+
+  const closeReport = () => {
+    if (reportDirty && !window.confirm('Data laporan belum dikirim. Tutup dan buang perubahan?')) return;
+    setReportDirty(false);
+    setShowReport(false);
+    setReportError('');
+  };
 
   const openReport = (type) => {
     setReportCategory('ambulans');
     setFormType(type);
+    reportRequestUuidRef.current = newRequestUuid();
+    setReportError('');
+    setReportDirty(false);
     setShowReport(true);
     setMobileMenuOpen(false);
   };
 
   const handleLaporSubmit = async (e) => {
     e.preventDefault();
+    const formElement = e.currentTarget;
+    setReportError('');
+    if (!formElement.checkValidity()) {
+      formElement.reportValidity();
+      return;
+    }
     setSubmitting(true);
     try {
-      const form = new FormData(e.currentTarget);
+      const form = new FormData(formElement);
+      form.set('request_uuid', reportRequestUuidRef.current);
       form.set('category', reportCategory);
       form.set('type', reportCategory === 'ambulans' ? formType : 'darurat');
-      const { data } = await api.post('/public/reports', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { data } = await api.post('/public/reports', form);
       setTrackCode(data.tracking_code);
       setTrackResult(null);
+      setReportDirty(false);
       setShowReport(false);
       setShowSuccess(true);
+      formElement.reset();
+      reportRequestUuidRef.current = newRequestUuid();
       addToast(data.message, 'success');
     } catch (err) {
-      addToast(errorMessage(err), 'error');
+      const msg = errorMessage(err);
+      setReportError(msg);
+      addToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -248,15 +309,25 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
 
   const handleInfaqSubmit = async (e) => {
     e.preventDefault();
+    const formElement = e.currentTarget;
+    setInfaqError('');
+    if (!formElement.checkValidity()) {
+      formElement.reportValidity();
+      return;
+    }
     setInfaqSubmitting(true);
     try {
-      const form = new FormData(e.currentTarget);
-      const { data } = await api.post('/public/infaq/payments', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const form = new FormData(formElement);
+      form.set('request_uuid', infaqRequestUuidRef.current);
+      const { data } = await api.post('/public/infaq/payments', form);
       setInfaqCode(data.payment_code);
       addToast(data.message, 'success');
-      e.currentTarget.reset();
+      formElement.reset();
+      infaqRequestUuidRef.current = newRequestUuid();
     } catch (err) {
-      addToast(errorMessage(err), 'error');
+      const msg = errorMessage(err);
+      setInfaqError(msg);
+      addToast(msg, 'error');
     } finally {
       setInfaqSubmitting(false);
     }
@@ -273,7 +344,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
     { icon: Ambulance, title:'Layanan Warga', desc:'Ajukan ambulans darurat atau sampaikan pengaduan BPJS dan bencana melalui satu alur laporan.', action:() => openReport('darurat'), actionLabel:'Buat Laporan', tone:'text-red-300 bg-red-400/10 border-red-300/20' },
     { icon: Calendar, title:'Jadwalkan Ambulans', desc:'Ajukan penjemputan terjadwal. Sistem memeriksa slot ambulans dan driver agar jadwal tidak saling bentrok.', action:() => openReport('terjadwal'), actionLabel:'Pilih Jadwal', tone:'text-cyan-300 bg-cyan-300/10 border-cyan-300/20' },
     { icon: Search, title:'Cek Status Layanan', desc:'Masukkan kode laporan untuk melihat perkembangan layanan, unit ambulans, dan driver yang sudah ditugaskan.', action:() => { setTrackResult(null); setShowTrack(true); }, actionLabel:'Lacak Laporan', tone:'text-blue-300 bg-blue-300/10 border-blue-300/20' },
-    { icon: HeartHandshake, title:'Infaq Warga', desc:'Scan QR infaq resmi Siaga Karta, lakukan pembayaran, lalu unggah bukti pembayaran untuk diverifikasi admin.', action:() => { setInfaqCode(''); setShowInfaq(true); }, actionLabel:'Infaq via QR', tone:'text-emerald-300 bg-emerald-300/10 border-emerald-300/20' },
+    { icon: HeartHandshake, title:'Infaq Warga', desc:'Bayar melalui QR atau rekening resmi Siaga Karta, lalu unggah bukti pembayaran untuk diverifikasi.', action:openInfaq, actionLabel:'Bayar Infaq', tone:'text-emerald-300 bg-emerald-300/10 border-emerald-300/20' },
   ];
 
   return (
@@ -369,11 +440,40 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           </div>
         </section>
 
+        <section id="alur-layanan" className="relative overflow-hidden bg-[#040917] py-28">
+          <div className="absolute inset-x-0 top-1/2 h-80 -translate-y-1/2 bg-cyan-700/5 blur-[120px]"/>
+          <div className="relative mx-auto max-w-7xl px-5 sm:px-7 lg:px-8">
+            <motion.div initial={{ opacity:0, y:28 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-90px' }} transition={{ duration:.65 }} className="mx-auto max-w-3xl text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Alur Layanan Warga</p>
+              <h2 className="mt-4 text-3xl font-light tracking-tight text-white md:text-5xl">Dari laporan sampai selesai, alurnya terlihat.</h2>
+              <p className="mt-5 text-sm leading-7 text-slate-400 sm:text-base">Scroll ke bawah untuk mengikuti perjalanan laporan warga. Setiap tahap memiliki status yang bisa dipantau.</p>
+            </motion.div>
+            <div className="relative mx-auto mt-16 max-w-5xl">
+              <div className="absolute bottom-10 left-7 top-10 w-px bg-gradient-to-b from-cyan-300/60 via-blue-400/30 to-emerald-300/60 md:left-1/2"/>
+              {[
+                { n:'01', title:'Warga mengirim laporan', text:'Isi identitas, kategori, lokasi, dan kebutuhan. Sistem langsung memvalidasi data sebelum laporan diterima.', icon:Send },
+                { n:'02', title:'Petugas menerima antrean', text:'Laporan masuk ke dashboard petugas. Ambulans darurat, jadwal, BPJS, dan bencana dipisahkan berdasarkan kebutuhan proses.', icon:Activity },
+                { n:'03', title:'Layanan diproses', text:'Untuk ambulans, sistem memeriksa konflik jadwal unit dan driver. Untuk pengaduan sosial, petugas memperbarui status penanganan.', icon:Ambulance },
+                { n:'04', title:'Warga memantau hasil', text:'Kode laporan digunakan untuk melihat progres sampai layanan selesai. Status berubah tanpa warga harus menanyakan ulang ke petugas.', icon:CheckCircle2 },
+              ].map((step,index) => { const Icon=step.icon; const left=index%2===0; return (
+                <motion.div key={step.n} initial={{ opacity:0, y:40 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-80px' }} transition={{ duration:.6, delay:index*.08 }} className={`relative mb-10 flex md:mb-14 ${left?'md:justify-start':'md:justify-end'}`}>
+                  <div className={`ml-16 w-[calc(100%-4rem)] rounded-3xl border border-white/10 bg-white/[0.045] p-6 shadow-xl shadow-black/10 md:ml-0 md:w-[45%] ${left?'md:mr-auto':'md:ml-auto'}`}>
+                    <div className="flex items-center gap-3"><span className="font-mono text-xs font-black tracking-widest text-cyan-300">{step.n}</span><div className="h-px flex-1 bg-white/10"/><Icon className="h-5 w-5 text-cyan-200"/></div>
+                    <h3 className="mt-5 text-xl font-bold text-white">{step.title}</h3>
+                    <p className="mt-3 text-sm leading-7 text-slate-400">{step.text}</p>
+                  </div>
+                  <motion.div whileInView={{ scale:[.75,1.12,1] }} viewport={{ once:true }} transition={{ duration:.55, delay:index*.08 }} className="absolute left-2 top-7 flex h-11 w-11 items-center justify-center rounded-full border border-cyan-300/40 bg-[#07132f] text-xs font-black text-cyan-200 shadow-[0_0_30px_rgba(103,232,249,0.12)] md:left-1/2 md:-translate-x-1/2">{step.n}</motion.div>
+                </motion.div>
+              ); })}
+            </div>
+          </div>
+        </section>
+
         <section id="program-sosial" className="bg-[#071128] py-24">
           <div className="mx-auto max-w-7xl px-5 sm:px-7 lg:px-8">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Program Bantuan</p><h2 className="mt-4 text-3xl font-light tracking-tight text-white md:text-5xl">Transparansi program sosial.</h2><p className="mt-5 text-sm leading-7 text-slate-400 sm:text-base">Warga dapat melihat target, dana terkumpul, dan bantuan yang telah disalurkan.</p></div>
-              <button onClick={() => { setInfaqCode(''); setShowInfaq(true); }} className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-cyan-300/30 bg-cyan-300/10 px-6 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-300/15"><QrCode className="h-4 w-4"/> Infaq via QR</button>
+              <button onClick={() => { setInfaqCode(''); setShowInfaq(true); }} className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-cyan-300/30 bg-cyan-300/10 px-6 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-300/15"><QrCode className="h-4 w-4"/> Bayar Infaq</button>
             </div>
             <div className="mt-12 grid gap-6 md:grid-cols-2">
               {db.program.length ? db.program.map((p,index) => {
@@ -413,37 +513,42 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
         </div>
       </footer>
 
-      <ModalForm isOpen={showReport} onClose={() => setShowReport(false)} title="Laporan & Pelayanan Warga">
-        <form onSubmit={handleLaporSubmit} className="space-y-6">
+      <ModalForm isOpen={showReport} onClose={closeReport} title="Laporan & Pelayanan Warga">
+        <form onSubmit={handleLaporSubmit} onChange={() => setReportDirty(true)} className="space-y-6" noValidate={false}>
           <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true"/>
-          <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4 text-sm text-cyan-950">
-            Form yang sama menerima permintaan ambulans serta pengaduan BPJS dan bencana. Tidak ada menu warga tambahan.
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
+            Isi semua field bertanda bintang. Jika data belum sesuai, pesan kesalahan akan tampil di form ini dan data tidak akan hilang.
           </div>
-          <div>
-            <label className="mb-2 block text-sm font-bold text-slate-700">Kategori Laporan *</label>
-            <select value={reportCategory} onChange={(e)=>{setReportCategory(e.target.value); if(e.target.value!=='ambulans') setFormType('darurat');}} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-semibold outline-none focus:ring-2 focus:ring-cyan-700">
-              <option value="ambulans">Layanan Ambulans</option>
-              <option value="bpjs">Pengaduan BPJS</option>
-              <option value="bencana">Laporan Bencana</option>
+          {reportError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{reportError}</div>}
+          <FieldGuide label="Kategori laporan" help="Pilih layanan yang paling sesuai agar laporan masuk ke alur petugas yang benar." required>
+            <select value={reportCategory} onChange={(e)=>{setReportDirty(true); setReportCategory(e.target.value); setReportError(''); if(e.target.value!=='ambulans') setFormType('darurat');}} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20">
+              <option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option>
             </select>
-          </div>
+          </FieldGuide>
           {reportCategory === 'ambulans' ? <>
             <div className={`flex items-start gap-3 rounded-2xl border p-4 text-sm ${formType === 'darurat' ? 'border-red-200 bg-red-50 text-red-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
               {formType === 'darurat' ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0"/> : <Clock className="mt-0.5 h-5 w-5 shrink-0"/>}
-              <p>{formType === 'darurat' ? 'Gunakan layanan darurat untuk kondisi yang membutuhkan respons cepat. NIK wajib diketik manual.' : 'Pilih waktu penjemputan dan estimasi durasi. Sistem mencegah ambulans dan driver memiliki jadwal yang bertabrakan.'}</p>
+              <p>{formType === 'darurat' ? 'Darurat dipakai untuk kebutuhan respons cepat. Pastikan nomor WhatsApp aktif dan lokasi cukup rinci.' : 'Terjadwal membutuhkan waktu jemput dan foto KTP. Sistem akan mengecek benturan jadwal ambulans dan driver.'}</p>
             </div>
-            <div className="flex gap-2 rounded-xl bg-slate-100 p-1.5"><button type="button" onClick={() => setFormType('darurat')} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='darurat'?'bg-white text-red-600 shadow-sm':'text-slate-500'}`}>Darurat</button><button type="button" onClick={() => setFormType('terjadwal')} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='terjadwal'?'bg-white text-blue-600 shadow-sm':'text-slate-500'}`}>Terjadwal</button></div>
-          </> : <div className={`rounded-2xl border p-4 text-sm ${reportCategory==='bpjs'?'border-blue-200 bg-blue-50 text-blue-900':'border-amber-200 bg-amber-50 text-amber-900'}`}>{reportCategory==='bpjs'?'Jelaskan kendala BPJS secara rinci. Laporan masuk ke antrean Karang Taruna tanpa menugaskan ambulans.':'Jelaskan kejadian bencana, lokasi, kondisi warga, dan kebutuhan mendesak. Laporan masuk ke antrean Karang Taruna tanpa menugaskan ambulans.'}</div>}
-          <div><h3 className="mb-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-600">Identitas Pelapor</h3><div className="grid gap-4 sm:grid-cols-2"><div><label className="mb-1.5 block text-sm font-bold text-slate-700">Nama Lengkap *</label><input name="name" required minLength={3} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"/></div><div><label className="mb-1.5 block text-sm font-bold text-slate-700">No. WhatsApp *</label><input name="phone" required type="tel" inputMode="tel" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"/></div><div className="sm:col-span-2"><label className="mb-1.5 block text-sm font-bold text-slate-700">NIK 16 Digit *</label><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} autoComplete="off" onPaste={(e)=>{e.preventDefault(); addToast('NIK harus diketik manual.','info');}} onDrop={(e)=>e.preventDefault()} placeholder="Ketik manual 16 digit NIK" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono outline-none focus:ring-2 focus:ring-cyan-700"/></div></div></div>
-          {reportCategory === 'ambulans' && formType === 'terjadwal' && <div><label className="mb-1.5 block text-sm font-bold text-slate-700">Foto KTP *</label><input name="ktp" required type="file" accept="image/jpeg,image/png,image/webp" className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"/></div>}
-          <div><h3 className="mb-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-600">Detail Laporan</h3><div className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2"><label className="mb-1.5 block text-sm font-bold text-slate-700">{reportCategory==='ambulans'?'Kondisi / Keperluan':'Isi Pengaduan / Kondisi'} *</label><textarea name="medical_condition" required minLength={3} rows={3} placeholder={reportCategory==='bpjs'?'Contoh: kepesertaan tidak aktif, rujukan, administrasi, atau kendala layanan BPJS...':reportCategory==='bencana'?'Contoh: banjir, kebakaran, longsor, warga terdampak, kebutuhan mendesak...':formType==='darurat'?'Kecelakaan, pingsan, kondisi pasien...':'Kontrol RS, pemeriksaan, kebutuhan pasien...'} className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"/></div>
-            {reportCategory==='ambulans' && formType==='terjadwal' && <div><label className="mb-1.5 block text-sm font-bold text-slate-700">Waktu Penjemputan *</label><input name="scheduled_at" required type="datetime-local" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"/></div>}
-            {reportCategory==='ambulans' && formType==='terjadwal' && <div><label className="mb-1.5 block text-sm font-bold text-slate-700">Estimasi Durasi *</label><select name="service_duration_minutes" defaultValue="120" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></div>}
-            {reportCategory==='ambulans' && <div className="sm:col-span-2"><label className="mb-1.5 block text-sm font-bold text-slate-700">Tujuan</label><input name="destination" placeholder="Rumah sakit / tujuan (opsional)" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"/></div>}
-            <div className="sm:col-span-2"><label className="mb-1.5 block text-sm font-bold text-slate-700">{reportCategory==='ambulans'?'Lokasi Penjemputan':'Lokasi / Alamat Terkait'} *</label><textarea name="pickup_location" required minLength={5} rows={3} placeholder={reportCategory==='bencana'?'Alamat/lokasi kejadian dan patokan...':reportCategory==='bpjs'?'Alamat pelapor atau fasilitas kesehatan terkait...':'Alamat lengkap, RT/RW, patokan...'} className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-cyan-700"/></div>
+            <div className="flex gap-2 rounded-xl bg-slate-100 p-1.5"><button type="button" onClick={() => { setReportDirty(true); setFormType('darurat'); }} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='darurat'?'bg-white text-red-700 shadow-sm':'text-slate-600 hover:text-slate-900'}`}>Darurat</button><button type="button" onClick={() => { setReportDirty(true); setFormType('terjadwal'); }} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='terjadwal'?'bg-white text-blue-700 shadow-sm':'text-slate-600 hover:text-slate-900'}`}>Terjadwal</button></div>
+          </> : <div className={`rounded-2xl border p-4 text-sm leading-6 ${reportCategory==='bpjs'?'border-blue-200 bg-blue-50 text-blue-900':'border-amber-200 bg-amber-50 text-amber-900'}`}>{reportCategory==='bpjs'?'Pengaduan BPJS diproses petugas tanpa penugasan ambulans. Jelaskan masalah administrasi atau layanan secara spesifik.':'Laporan bencana diproses petugas tanpa penugasan ambulans otomatis. Cantumkan lokasi, kondisi warga, dan kebutuhan mendesak.'}</div>}
+
+          <div><h3 className="mb-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700">Identitas Pelapor</h3><div className="grid gap-5 sm:grid-cols-2">
+            <FieldGuide label="Nama lengkap" help="Nama pelapor yang dapat dikonfirmasi petugas." required><input name="name" required minLength={3} autoComplete="name" placeholder="Contoh: Budi Santoso" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label="No. WhatsApp" help="Gunakan nomor Indonesia aktif, contoh 081234567890." required><input name="phone" required type="tel" inputMode="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label="NIK 16 digit" help="Dipakai untuk validasi identitas dasar. NIK tidak ditampilkan kembali di portal publik." required className="sm:col-span-2"><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} autoComplete="off" placeholder="16 digit angka" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
           </div></div>
-          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" onClick={() => setShowReport(false)}>Batal</Button><Button disabled={submitting} type="submit" variant={reportCategory==='ambulans'&&formType==='darurat'?'danger':'primary'}>{submitting?'Mengirim...':reportCategory==='ambulans'?(formType==='darurat'?'Kirim Permintaan Darurat':'Ajukan Penjadwalan'):'Kirim Pengaduan'}</Button></div>
+
+          {reportCategory === 'ambulans' && formType === 'terjadwal' && <FieldGuide label="Foto KTP" help="Format JPG, PNG, atau WEBP. Maksimal 4 MB. File hanya dipakai untuk administrasi layanan terjadwal." required><input name="ktp" required type="file" accept="image/jpeg,image/png,image/webp" className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-700"/></FieldGuide>}
+
+          <div><h3 className="mb-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700">Detail Laporan</h3><div className="grid gap-5 sm:grid-cols-2">
+            <FieldGuide label={reportCategory==='ambulans'?'Kondisi / keperluan':'Isi pengaduan / kondisi'} help="Jelaskan inti masalah, kondisi saat ini, dan informasi penting yang perlu diketahui petugas." required className="sm:col-span-2"><textarea name="medical_condition" required minLength={3} rows={3} placeholder={reportCategory==='bpjs'?'Contoh: kepesertaan tidak aktif saat akan berobat...':reportCategory==='bencana'?'Contoh: banjir setinggi 50 cm, 6 keluarga terdampak...':formType==='darurat'?'Contoh: pasien pingsan dan membutuhkan ambulans...':'Contoh: kontrol rumah sakit dan membutuhkan antar jemput...'} className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            {reportCategory==='ambulans' && formType==='terjadwal' && <FieldGuide label="Waktu penjemputan" help="Pilih waktu di masa mendatang. Jadwal final tetap menunggu pengecekan ketersediaan." required><input name="scheduled_at" required type="datetime-local" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>}
+            {reportCategory==='ambulans' && formType==='terjadwal' && <FieldGuide label="Estimasi durasi" help="Perkiraan total waktu ambulans digunakan agar sistem dapat mencegah jadwal bertabrakan." required><select name="service_duration_minutes" defaultValue="120" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></FieldGuide>}
+            {reportCategory==='ambulans' && <FieldGuide label="Tujuan" help="Rumah sakit atau lokasi tujuan. Boleh dikosongkan jika belum diketahui." className="sm:col-span-2"><input name="destination" placeholder="Contoh: RSUD Kota" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>}
+            <FieldGuide label={reportCategory==='ambulans'?'Lokasi penjemputan':'Lokasi / alamat terkait'} help="Tulis alamat lengkap dan patokan agar petugas tidak salah lokasi." required className="sm:col-span-2"><textarea name="pickup_location" required minLength={5} rows={3} placeholder="Alamat, RT/RW, kelurahan, dan patokan" className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+          </div></div>
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" onClick={closeReport}>Batal</Button><Button disabled={submitting} type="submit" variant={reportCategory==='ambulans'&&formType==='darurat'?'danger':'primary'}>{submitting?'Mengirim...':reportCategory==='ambulans'?(formType==='darurat'?'Kirim Permintaan Darurat':'Ajukan Penjadwalan'):'Kirim Pengaduan'}</Button></div>
         </form>
       </ModalForm>
 
@@ -455,8 +560,22 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
         <div className="py-4 text-center"><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-10 w-10"/></div><h3 className="mt-5 text-2xl font-black text-slate-900">Simpan kode laporan Anda</h3><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">Gunakan kode ini untuk memantau status pelayanan. Jangan membagikannya kepada pihak yang tidak berkepentingan.</p><div className="mx-auto mt-6 max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5 font-mono text-lg font-black tracking-wider text-slate-900 sm:text-2xl">{trackCode}</div><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => setShowSuccess(false)}>Tutup</Button><Button onClick={() => { setShowSuccess(false); setTrackResult(null); setShowTrack(true); }}>Cek Status Sekarang</Button></div></div>
       </ModalForm>
 
-      <ModalForm isOpen={showInfaq} onClose={() => { setShowInfaq(false); setInfaqCode(''); }} title={infaqInfo.title || 'Infaq Siaga Karta'}>
-        {!infaqInfo.active ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">Pembayaran infaq via QR belum diaktifkan oleh admin.</div> : <div className="space-y-6"><div className="grid gap-6 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">{infaqInfo.has_qr ? <img src={infaqInfo.qr_url} alt="QR pembayaran infaq SIAGA KARTA" className="mx-auto aspect-square w-full max-w-[280px] rounded-xl object-contain"/> : <div className="flex aspect-square items-center justify-center text-slate-400"><QrCode className="h-20 w-20"/></div>}<p className="mt-3 text-xs text-slate-500">Scan QR dengan aplikasi pembayaran Anda.</p></div><div><p className="text-sm leading-7 text-slate-600">{infaqInfo.description}</p>{infaqInfo.payment_instructions && <div className="mt-4 whitespace-pre-line rounded-xl bg-cyan-50 p-4 text-sm text-cyan-950">{infaqInfo.payment_instructions}</div>}</div></div>{infaqCode ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600"/><div className="mt-2 font-bold text-emerald-900">Bukti pembayaran diterima</div><div className="mt-2 font-mono text-sm text-emerald-900">{infaqCode}</div><div className="mt-2 text-xs text-emerald-700">Pembayaran akan masuk ke kas setelah diverifikasi admin.</div></div> : <form onSubmit={handleInfaqSubmit} className="space-y-4"><input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true"/><div className="grid gap-4 sm:grid-cols-2"><input name="payer_name" required minLength={3} placeholder="Nama lengkap" className="w-full rounded-xl border border-slate-200 p-3 outline-none focus:ring-2 focus:ring-cyan-700"/><input name="payer_phone" required type="tel" placeholder="No. WhatsApp" className="w-full rounded-xl border border-slate-200 p-3 outline-none focus:ring-2 focus:ring-cyan-700"/><input name="amount" required type="number" min="1000" placeholder="Nominal infaq" className="w-full rounded-xl border border-slate-200 p-3 outline-none focus:ring-2 focus:ring-cyan-700 sm:col-span-2"/></div><textarea name="description" rows={2} placeholder="Catatan opsional" className="w-full resize-none rounded-xl border border-slate-200 p-3 outline-none focus:ring-2 focus:ring-cyan-700"/><div><label className="mb-2 block text-sm font-bold text-slate-700">Upload bukti pembayaran *</label><input name="payment_proof" required type="file" accept="image/jpeg,image/png,image/webp" className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"/></div><Button disabled={infaqSubmitting} type="submit" className="w-full"><Upload className="mr-2 h-4 w-4"/>{infaqSubmitting?'Mengirim bukti...':'Kirim Bukti Pembayaran'}</Button></form>}</div>}
+      <ModalForm isOpen={showInfaq} onClose={() => { setShowInfaq(false); setInfaqCode(''); setInfaqError(''); }} title={infaqInfo.title || 'Infaq Siaga Karta'}>
+        {!infaqInfo.active ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-800">Pembayaran infaq belum diaktifkan oleh pengelola.</div> : <div className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">{infaqInfo.has_qr ? <img src={infaqInfo.qr_url} alt="QR pembayaran infaq SIAGA KARTA" className="mx-auto aspect-square w-full max-w-[280px] rounded-xl object-contain"/> : <div className="flex aspect-square items-center justify-center text-slate-400"><QrCode className="h-20 w-20"/></div>}<p className="mt-3 text-xs text-slate-500">Gunakan QR atau rekening resmi yang tersedia.</p></div><div>{infaqInfo.bank_name && infaqInfo.account_number && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="text-xs font-black uppercase tracking-wider text-emerald-700">Transfer Bank</div><div className="mt-2 font-bold text-slate-950">{infaqInfo.bank_name}</div><div className="mt-1 flex items-center gap-2"><code className="rounded bg-white px-2 py-1 text-sm font-black text-slate-950">{infaqInfo.account_number}</code><button type="button" onClick={()=>navigator.clipboard?.writeText(infaqInfo.account_number).then(()=>addToast('Nomor rekening disalin.','success')).catch(()=>{})} className="text-xs font-bold text-emerald-700">Salin</button></div><div className="mt-1 text-xs text-slate-600">a.n. {infaqInfo.account_name}</div></div>}<p className="text-sm leading-7 text-slate-600">{infaqInfo.description}</p>{infaqInfo.payment_instructions && <div className="mt-4 whitespace-pre-line rounded-xl bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">{infaqInfo.payment_instructions}</div>}</div></div>
+          {infaqCode ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600"/><div className="mt-2 font-bold text-emerald-900">Bukti pembayaran diterima</div><div className="mt-2 font-mono text-sm text-emerald-900">{infaqCode}</div><div className="mt-2 text-xs text-emerald-700">Pembayaran akan masuk ke kas setelah diverifikasi Admin/Karta.</div></div> : <form onSubmit={handleInfaqSubmit} className="space-y-5">
+            <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true"/>
+            {infaqError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{infaqError}</div>}
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FieldGuide label="Nama pembayar" help="Nama yang digunakan untuk pencatatan transaksi infaq." required><input name="payer_name" required minLength={3} placeholder="Nama lengkap" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+              <FieldGuide label="No. WhatsApp" help="Nomor aktif untuk verifikasi jika ada kendala pada bukti pembayaran." required><input name="payer_phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+              <FieldGuide label="Nominal infaq" help="Minimal Rp1.000. Isi angka tanpa titik atau koma." required className="sm:col-span-2"><input name="amount" required type="number" min="1000" placeholder="Contoh: 50000" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+              <FieldGuide label="Catatan" help="Opsional. Bisa diisi tujuan atau pesan singkat untuk pencatatan." className="sm:col-span-2"><textarea name="description" rows={2} placeholder="Catatan opsional" className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+              <FieldGuide label="Bukti pembayaran" help="Upload JPG, PNG, atau WEBP maksimal 5 MB. Bukti yang sama tidak dapat dikirim dua kali." required className="sm:col-span-2"><input name="payment_proof" required type="file" accept="image/jpeg,image/png,image/webp" className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-700"/></FieldGuide>
+            </div>
+            <Button disabled={infaqSubmitting} type="submit" className="w-full"><Upload className="mr-2 h-4 w-4"/>{infaqSubmitting?'Mengirim bukti...':'Kirim Bukti Pembayaran'}</Button>
+          </form>}
+        </div>}
       </ModalForm>
 
       <SiagaBot db={db}/>
@@ -472,7 +591,7 @@ const Login = ({ setRole, addToast, onLogin }) => {
     e.preventDefault(); setLoading(true);
     try {
       const { data } = await api.post('/auth/login', { login: e.currentTarget.login.value, password: e.currentTarget.password.value });
-      setToken(data.token); onLogin(data.user); setRole(data.user.role); addToast('Login berhasil.', 'success');
+      setToken(data.token,{expires_at:data.expires_at,absolute_expires_at:data.absolute_expires_at}); onLogin(data.user); setRole(data.user.role); addToast('Login berhasil.', 'success');
     } catch (err) { addToast(errorMessage(err), 'error'); } finally { setLoading(false); }
   };
   return (
@@ -487,8 +606,8 @@ const Login = ({ setRole, addToast, onLogin }) => {
       <div className="absolute top-6 right-6"><button onClick={() => setRole('warga')} className="px-5 py-2.5 bg-slate-50 text-slate-600 text-sm font-bold rounded-full border border-slate-200">Kembali ke Portal Warga</button></div>
       <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Petugas</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun resmi sistem.</p>
         <form className="space-y-5" onSubmit={handleLogin}>
-          <div className="space-y-1.5"><label className="text-sm font-bold text-slate-700">Email atau Username</label><input name="login" required autoComplete="username" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#022b20] outline-none text-sm" /></div>
-          <div className="space-y-1.5"><label className="text-sm font-bold text-slate-700">Password</label><div className="relative"><input name="password" required minLength={8} type={showPassword?'text':'password'} autoComplete="current-password" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#022b20] outline-none text-sm" /><button type="button" onClick={()=>setShowPassword(v=>!v)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"><Eye className="w-5 h-5"/></button></div></div>
+          <FieldGuide label="Email atau Username" help="Gunakan akun resmi Admin, Petugas, atau Karta yang sudah terdaftar." required><input name="login" required autoComplete="username" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#022b20]/20 outline-none text-sm text-slate-900" /></FieldGuide>
+          <FieldGuide label="Password" help="Masukkan password akun Anda. Tombol mata hanya mengubah tampilan, bukan menyimpan password." required><div className="relative"><input name="password" required minLength={8} type={showPassword?'text':'password'} autoComplete="current-password" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#022b20]/20 outline-none text-sm text-slate-900" /><button type="button" aria-label={showPassword?'Sembunyikan password':'Tampilkan password'} onClick={()=>setShowPassword(v=>!v)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500"><Eye className="w-5 h-5"/></button></div></FieldGuide>
           <button disabled={loading} type="submit" className="w-full py-4 bg-[#022b20] text-white rounded-xl font-bold disabled:opacity-50">{loading?'Memverifikasi...':'Masuk ke Dashboard'}</button>
         </form>
       </div>
@@ -497,19 +616,80 @@ const Login = ({ setRole, addToast, onLogin }) => {
   );
 };
 
+const NotificationBell = ({ addToast }) => {
+  const [open,setOpen]=useState(false);
+  const [items,setItems]=useState([]);
+  const [unread,setUnread]=useState(0);
+  const [loading,setLoading]=useState(false);
+  const load=async(silent=false)=>{
+    if(!silent)setLoading(true);
+    try{
+      const {data}=await api.get('/notifications',{params:{per_page:20}});
+      setItems(data.data||[]);setUnread(Number(data.unread||0));
+    }catch(err){if(!silent)addToast(errorMessage(err),'error');}
+    finally{if(!silent)setLoading(false);}
+  };
+  useEffect(()=>{
+    load(true);
+    const changed=()=>load(true);
+    window.addEventListener('siagakarta:notifications-changed',changed);
+    return()=>window.removeEventListener('siagakarta:notifications-changed',changed);
+  },[]);
+  const markRead=async(item)=>{
+    try{
+      if(!item.read_at) await api.post(`/notifications/${item.id}/read`);
+      setItems(rows=>rows.map(row=>row.id===item.id?{...row,read_at:row.read_at||new Date().toISOString()}:row));
+      if(!item.read_at)setUnread(v=>Math.max(0,v-1));
+      if(item.target_menu)window.dispatchEvent(new CustomEvent('siagakarta:navigate',{detail:item.target_menu}));
+      setOpen(false);
+    }catch(err){addToast(errorMessage(err),'error');}
+  };
+  const readAll=async()=>{
+    try{await api.post('/notifications/read-all');setUnread(0);setItems(rows=>rows.map(row=>({...row,read_at:row.read_at||new Date().toISOString()})));}
+    catch(err){addToast(errorMessage(err),'error');}
+  };
+  return <div className="relative">
+    <button type="button" aria-label="Notifikasi" onClick={()=>{setOpen(v=>!v);if(!open)load();}} className="relative w-10 h-10 rounded-full bg-white border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-slate-50 shadow-sm">
+      <Bell className="w-5 h-5"/>
+      {unread>0&&<span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center border-2 border-white">{unread>99?'99+':unread}</span>}
+    </button>
+    {open&&<div className="absolute right-0 top-12 z-[120] w-[min(24rem,calc(100vw-2rem))] max-h-[32rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100"><div><div className="font-black text-slate-900">Notifikasi</div><div className="text-xs text-slate-500">{unread} belum dibaca</div></div>{unread>0&&<button type="button" onClick={readAll} className="text-xs font-bold text-emerald-700 hover:text-emerald-900">Baca semua</button>}</div>
+      <div className="max-h-[26rem] overflow-y-auto">
+        {loading?<div className="p-6 text-sm text-slate-500">Memuat notifikasi...</div>:items.length===0?<div className="p-6 text-sm text-slate-500">Belum ada notifikasi.</div>:items.map(item=><button type="button" key={item.id} onClick={()=>markRead(item)} className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${item.read_at?'bg-white':'bg-emerald-50/60'}`}>
+          <div className="flex gap-3"><span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${item.read_at?'bg-slate-300':'bg-emerald-600'}`}/><div className="min-w-0"><div className="text-sm font-black text-slate-900">{item.title}</div><div className="mt-1 text-xs leading-5 text-slate-600">{item.message}</div><div className="mt-1 text-[11px] text-slate-400">{new Date(item.created_at).toLocaleString('id-ID')}</div></div></div>
+        </button>)}
+      </div>
+    </div>}
+  </div>;
+};
+
 const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard, setRole, addToast, requestConfirm }) => {
-  const [activeMenu, setActiveMenu] = useState('dashboard');
+  const allowedMenus = role==='karta'
+    ? ['dashboard','kas','laporan']
+    : role==='admin'
+      ? ['dashboard','pelayanan','ambulans','kas','laporan','users']
+      : ['dashboard','pelayanan','ambulans','laporan'];
+  const [activeMenu, setActiveMenu] = useState(() => {
+    const saved=sessionStorage.getItem(`siagakarta_menu_${role}`) || 'dashboard';
+    return allowedMenus.includes(saved)?saved:'dashboard';
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCompact, setDesktopCompact] = useState(false);
 
-  const sidebarNavs = [
-    { id: 'dashboard', label: 'Beranda', icon: Home },
-    { id: 'pelayanan', label: 'Pelayanan Warga', icon: Activity },
-    { id: 'ambulans', label: 'Ambulans', icon: Truck },
-    { id: 'laporan', label: 'Download Laporan', icon: Download },
-  ];
-  if(role === 'admin') sidebarNavs.splice(3,0,{ id: 'kas', label: 'Kas & Transaksi', icon: FileText });
-  if(role === 'admin') sidebarNavs.push({ id: 'users', label: 'Manajemen User', icon: Users });
+  const navMap = {
+    dashboard:{ id:'dashboard',label:'Beranda',icon:Home },
+    pelayanan:{ id:'pelayanan',label:'Pelayanan Warga',icon:Activity },
+    ambulans:{ id:'ambulans',label:'Ambulans',icon:Truck },
+    kas:{ id:'kas',label:'Kas & Pembayaran',icon:ReceiptText },
+    laporan:{ id:'laporan',label:'Download Laporan',icon:Download },
+    users:{ id:'users',label:'Manajemen User',icon:Users },
+  };
+  const sidebarNavs=allowedMenus.map(id=>navMap[id]);
+
+  useEffect(() => {
+    if (!allowedMenus.includes(activeMenu)) setActiveMenu('dashboard');
+  }, [role, activeMenu]);
 
   const renderContent = () => {
     switch(activeMenu) {
@@ -519,10 +699,24 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
       case 'kas': return <ViewKas db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} />;
       case 'users': return <ViewUsers addToast={addToast} />;
       case 'laporan': return <ViewLaporan addToast={addToast} role={role} />;
-      default: return null;
+      default: return <ViewDashboard db={db} role={role} stats={dashboardStats} />;
     }
   };
-  const chooseMenu=(id)=>{setActiveMenu(id);setMobileOpen(false);};
+  const chooseMenu=(id)=>{
+    if (!allowedMenus.includes(id)) return;
+    setActiveMenu(id);
+    sessionStorage.setItem(`siagakarta_menu_${role}`, id);
+    setMobileOpen(false);
+  };
+  useEffect(()=>{
+    const navigate=(event)=>{if(event.detail)chooseMenu(event.detail);};
+    window.addEventListener('siagakarta:navigate',navigate);
+    return()=>window.removeEventListener('siagakarta:navigate',navigate);
+  },[role,activeMenu]);
+  const logout=()=>requestConfirm('Logout','Yakin ingin keluar dari sistem?','Logout','Batal',async()=>{
+    try{await api.post('/auth/logout');}catch{}finally{setToken(null);setRole('warga');addToast('Berhasil logout','info');}
+  });
+  const roleLabel=role==='admin'?'Admin':role==='karta'?'Karta':'Petugas';
   const sidebarContent = (mobile=false) => <>
     <div className="flex items-center justify-between px-5 mb-8">
       <div className={`flex items-center gap-3 overflow-hidden whitespace-nowrap ${!mobile && desktopCompact ? 'lg:w-0 lg:opacity-0' : ''}`}>
@@ -536,7 +730,7 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
         <nav.icon className="w-5 h-5 shrink-0"/>{(mobile || !desktopCompact) && <span className="font-bold text-sm whitespace-nowrap">{nav.label}</span>}
       </button>)}
     </nav>
-    <div className="p-3 mt-auto"><button onClick={()=>requestConfirm('Logout','Yakin ingin keluar dari sistem?','Logout','Batal',()=>{api.post('/auth/logout').catch(()=>{});setToken(null);setRole('warga');addToast('Berhasil logout','info');})} className="flex items-center gap-4 px-4 py-3.5 text-white/70 hover:text-white w-full rounded-xl hover:bg-white/5"><LogOut className="w-5 h-5 shrink-0"/>{(mobile || !desktopCompact) && <span className="font-bold text-sm">Logout Sistem</span>}</button></div>
+    <div className="p-3 mt-auto"><button onClick={logout} className="flex items-center gap-4 px-4 py-3.5 text-white/70 hover:text-white w-full rounded-xl hover:bg-white/5"><LogOut className="w-5 h-5 shrink-0"/>{(mobile || !desktopCompact) && <span className="font-bold text-sm">Logout Sistem</span>}</button></div>
   </>;
 
   return <div className="min-h-[100dvh] bg-[#011a13] lg:flex font-sans overflow-hidden">
@@ -545,80 +739,38 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
     <aside className={`hidden lg:flex ${desktopCompact?'w-20':'w-64'} py-8 flex-col shrink-0 transition-all duration-300`}>{sidebarContent(false)}</aside>
     <main className="min-w-0 flex-1 flex flex-col h-[100dvh] overflow-hidden bg-[#FBFBFA] lg:rounded-l-3xl lg:shadow-[-10px_0_30px_rgba(0,0,0,0.2)]">
       <header className="min-h-16 sm:min-h-20 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/80 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{activeMenu.replace('_',' ')}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">Sistem Administrasi {role==='admin'?'Kelurahan':'Karang Taruna'}</p></div></div>
-        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-100 text-[#022b20] flex items-center justify-center font-bold border border-emerald-200 shrink-0">{role==='admin'?'AD':'KT'}</div>
+        <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{navMap[activeMenu]?.label || 'Beranda'}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">Portal {roleLabel} · sinkronisasi aktif</p></div></div>
+        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-emerald-100 text-[#022b20] flex items-center justify-center font-black border border-emerald-200 shrink-0">{role==='admin'?'AD':role==='karta'?'KR':'PT'}</div></div>
       </header>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 hide-scroll">{renderContent()}</div>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 hide-scroll"><DashboardErrorBoundary resetKey={activeMenu}><div key={activeMenu} className="min-h-full">{renderContent()}</div></DashboardErrorBoundary></div>
     </main>
   </div>;
 };
 
 const ViewDashboard = ({ db, role, stats }) => {
+  const canFinance=role==='admin'||role==='karta';
+  const canOperations=role==='admin'||role==='petugas';
+  const liveChart=stats?.daily?.length ? stats.daily : chartData;
+  const pendingFinance=db.transaksi.filter(t=>t.status==='pending').length;
+  const actionLabel=(action='')=>action.replaceAll('.',' · ').replaceAll('_',' ');
   return (
     <div className="animate-in fade-in flex flex-col h-full gap-6 max-w-7xl">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="col-span-1 md:col-span-2 bg-[#022b20] text-white border-none shadow-xl shadow-emerald-900/10">
-          <h3 className="text-emerald-100 text-sm font-bold mb-1 uppercase tracking-widest">Saldo Kas Sosial</h3>
-          <div className="text-4xl font-black mb-4 tracking-tight">{role==='admin'?`Rp ${Number(stats?.saldo||0).toLocaleString('id-ID')}`:'Khusus Admin'}</div>
-          <div className="flex gap-6">
-            <div><div className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-1">Masuk Bln Ini</div><div className="font-bold text-lg">{role==='admin'?`Rp${Number(stats?.pemasukan_bulan||0).toLocaleString('id-ID')}`:'-'}</div></div>
-            <div><div className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">Keluar Bln Ini</div><div className="font-bold text-lg">{role==='admin'?`Rp${Number(stats?.pengeluaran_bulan||0).toLocaleString('id-ID')}`:'-'}</div></div>
-          </div>
-        </Card>
-        <Card className="flex flex-col justify-center">
-           <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4"><Activity className="w-6 h-6"/></div>
-           <div className="text-3xl font-black text-slate-900">{stats?.laporan_aktif ?? db.laporan.filter(l=>l.status!=='selesai').length}</div>
-           <div className="text-sm font-bold text-slate-500">Laporan Aktif Menunggu</div>
-        </Card>
-        <Card className="flex flex-col justify-center">
-           <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-4"><Truck className="w-6 h-6"/></div>
-           <div className="text-3xl font-black text-slate-900">{stats?.ambulans_tersedia ?? db.ambulans.filter(a=>a.status==='tersedia').length}</div>
-           <div className="text-sm font-bold text-slate-500">Unit Ambulans Standby</div>
-        </Card>
+        {canFinance&&<Card className="col-span-1 md:col-span-2 bg-[#022b20] text-white border-none shadow-xl shadow-emerald-900/10">
+          <h3 className="text-emerald-100 text-sm font-bold mb-1 uppercase tracking-widest">Saldo Kas Terverifikasi</h3>
+          <div className="text-4xl font-black mb-4 tracking-tight">Rp {Number(stats?.saldo||0).toLocaleString('id-ID')}</div>
+          <div className="flex gap-6"><div><div className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-1">Masuk Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pemasukan_bulan||0).toLocaleString('id-ID')}</div></div><div><div className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">Keluar Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pengeluaran_bulan||0).toLocaleString('id-ID')}</div></div></div>
+        </Card>}
+        {canOperations&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4"><Activity className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.laporan_aktif ?? 0}</div><div className="text-sm font-bold text-slate-500">Laporan Aktif</div></Card>}
+        {canOperations&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-4"><Truck className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.ambulans_tersedia ?? 0}</div><div className="text-sm font-bold text-slate-500">Ambulans Tersedia</div></Card>}
+        {role==='karta'&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mb-4"><Clock className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{pendingFinance}</div><div className="text-sm font-bold text-slate-500">Transaksi Pending</div></Card>}
+        {role==='karta'&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><ReceiptText className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{db.transaksi.length}</div><div className="text-sm font-bold text-slate-500">Transaksi Terbaru</div></Card>}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-[350px]">
-        {/* Recharts Volume Laporan Area */}
-        <Card className="lg:col-span-2 flex flex-col">
-           <div className="flex justify-between items-center mb-6">
-             <h3 className="font-bold text-slate-900">Volume Laporan Harian</h3>
-             <select className="text-sm border-none bg-slate-50 p-2 rounded-lg outline-none font-bold text-slate-600"><option>7 Hari Terakhir</option></select>
-           </div>
-           <div className="flex-1 w-full h-full min-h-[250px]">
-             <ResponsiveContainer width="100%" height="100%">
-               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                 <defs>
-                   <linearGradient id="colorDarurat" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient>
-                   <linearGradient id="colorSosial" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#022b20" stopOpacity={0.3}/><stop offset="95%" stopColor="#022b20" stopOpacity={0}/></linearGradient>
-                 </defs>
-                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b', fontWeight: 'bold'}} />
-                 <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b', fontWeight: 'bold'}} />
-                 <RechartsTooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-                 <Area type="monotone" name="Layanan Ambulans" dataKey="darurat" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorDarurat)" />
-                 <Area type="monotone" name="Pengaduan BPJS/Bencana" dataKey="sosial" stroke="#022b20" strokeWidth={3} fillOpacity={1} fill="url(#colorSosial)" />
-               </AreaChart>
-             </ResponsiveContainer>
-           </div>
-        </Card>
-        
-        {/* Recent Activity Feeds */}
-        <Card className="flex flex-col bg-slate-50/50 border-none">
-          <h3 className="font-bold text-slate-900 mb-6">Aktivitas Terkini</h3>
-          <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-             {[1,2,3,4].map(i => (
-               <div key={i} className="flex gap-4 relative before:absolute before:left-[11px] before:top-8 before:bottom-[-24px] before:w-[2px] before:bg-slate-200 last:before:hidden">
-                 <div className="w-6 h-6 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center flex-shrink-0 z-10">
-                   <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                 </div>
-                 <div>
-                   <p className="text-sm font-medium text-slate-700">Laporan <span className="font-bold text-slate-900">LPR-00{i}</span> masuk sistem</p>
-                   <p className="text-xs text-slate-400 mt-1 font-medium">{i * 10} menit lalu</p>
-                 </div>
-               </div>
-             ))}
-          </div>
-        </Card>
+      <div className={`grid grid-cols-1 ${canOperations?'lg:grid-cols-3':'lg:grid-cols-2'} gap-6 flex-1 min-h-[350px]`}>
+        {canOperations&&<Card className="lg:col-span-2 flex flex-col"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-900">Volume Laporan 7 Hari</h3><span className="text-xs font-bold text-emerald-700">LIVE SYNC</span></div><div className="flex-1 w-full h-full min-h-[250px]"><ResponsiveContainer width="100%" height="100%"><AreaChart data={liveChart} margin={{ top:10,right:10,left:-20,bottom:0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><YAxis axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><RechartsTooltip contentStyle={{borderRadius:'16px',border:'none'}}/><Area type="monotone" name="Ambulans" dataKey="darurat" stroke="#ef4444" strokeWidth={3} fillOpacity={0.08} fill="#ef4444"/><Area type="monotone" name="BPJS/Bencana" dataKey="sosial" stroke="#022b20" strokeWidth={3} fillOpacity={0.08} fill="#022b20"/></AreaChart></ResponsiveContainer></div></Card>}
+        {canFinance&&role==='karta'&&<Card><h3 className="font-bold text-slate-900 mb-4">Ringkasan Karta</h3><p className="text-sm leading-6 text-slate-600">Saldo hanya berasal dari transaksi berstatus verified. Pengeluaran tidak dapat diverifikasi jika melebihi saldo. QR dan rekening pembayaran memakai pengaturan yang sama dengan landing page warga.</p></Card>}
+        <Card className="flex flex-col bg-slate-50/50 border-none"><div className="flex items-center justify-between mb-6"><h3 className="font-bold text-slate-900">Aktivitas Terkini</h3><span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Audit</span></div><div className="flex-1 overflow-y-auto pr-2 space-y-5">{(stats?.activity||[]).length ? stats.activity.map(item=><div key={item.id} className="flex gap-3"><div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0"/><div><p className="text-sm font-semibold text-slate-800 capitalize">{actionLabel(item.action)}</p><p className="mt-1 text-xs text-slate-400">{item.actor||'Sistem'} • {new Date(item.created_at).toLocaleString('id-ID')}</p></div></div>) : <p className="text-sm text-slate-500">Belum ada aktivitas tercatat.</p>}</div></Card>
       </div>
     </div>
   );
@@ -628,128 +780,154 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
   const [showInputModal, setShowInputModal] = useState(false);
   const [inputType, setInputType] = useState('darurat');
   const [inputCategory, setInputCategory] = useState('ambulans');
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestRef = useRef(0);
+  const [manualSubmitting, setManualSubmitting] = useState(false);
+  const [manualDirty, setManualDirty] = useState(false);
+  const manualRequestUuidRef = useRef(newRequestUuid());
+
+  const [reportRows,setReportRows]=useState([]);
+  const [reportPage,setReportPage]=useState(1);
+  const [reportMeta,setReportMeta]=useState({current_page:1,last_page:1,total:0});
+  const [reportStatusFilter,setReportStatusFilter]=useState('');
+  const [reportCategoryFilter,setReportCategoryFilter]=useState('');
+  const [reportLoading,setReportLoading]=useState(false);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const load=async()=>{
+      setReportLoading(true);
+      try{
+        const {data}=await api.get('/reports',{params:{page:reportPage,per_page:25,status:reportStatusFilter||undefined,category:reportCategoryFilter||undefined}});
+        if(cancelled)return;
+        setReportRows((data.data||[]).map(mapReportRow));
+        setReportMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});
+      }catch(err){if(!cancelled)addToast(errorMessage(err),'error');}
+      finally{if(!cancelled)setReportLoading(false);}
+    };
+    load();
+    const onRefresh=()=>load();
+    window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
+    return()=>{cancelled=true;window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);};
+  },[reportPage,reportStatusFilter,reportCategoryFilter]);
+
+  useEffect(()=>{
+    if(!manualDirty) return;
+    const warn=(event)=>{event.preventDefault();event.returnValue='';};
+    window.addEventListener('beforeunload',warn);
+    return ()=>window.removeEventListener('beforeunload',warn);
+  },[manualDirty]);
+
+  const closeManual=()=>{
+    if(!manualDirty){setShowInputModal(false);return;}
+    requestConfirm('Buang perubahan?','Data yang sudah diisi belum disimpan. Jika ditutup, perubahan akan hilang.','Buang','Kembali',()=>{setManualDirty(false);setShowInputModal(false);},'danger');
+  };
+  const openManual=()=>{manualRequestUuidRef.current=newRequestUuid();setManualDirty(false);setShowInputModal(true);};
 
   const handleManualInputSubmit = async (e) => {
     e.preventDefault();
-    try { const form = new FormData(e.currentTarget); const payload=Object.fromEntries(form.entries()); payload.category=inputCategory; payload.type=inputCategory==='ambulans'?inputType:'darurat'; const {data}=await api.post('/reports/manual',payload); addToast(data.message,'success'); setShowInputModal(false); refreshDashboard(); }
-    catch(err){addToast(errorMessage(err),'error');}
+    const formElement=e.currentTarget;
+    if(!formElement.checkValidity()){formElement.reportValidity();return;}
+    setManualSubmitting(true);
+    try {
+      const form = new FormData(formElement);
+      const payload=Object.fromEntries(form.entries());
+      payload.request_uuid=manualRequestUuidRef.current;
+      payload.category=inputCategory;
+      payload.type=inputCategory==='ambulans'?inputType:'darurat';
+      const {data}=await api.post('/reports/manual',payload);
+      addToast(data.message,'success');
+      formElement.reset();
+      setManualDirty(false);
+      setShowInputModal(false);
+      manualRequestUuidRef.current=newRequestUuid();
+      refreshDashboard();
+    } catch(err){addToast(errorMessage(err),'error');}
+    finally{setManualSubmitting(false);}
   };
   const processReport = async (code) => {
     try { const {data}=await api.post(`/reports/${code}/assign`,{}); addToast(data.message,'success'); refreshDashboard(); } catch(err){addToast(errorMessage(err),'error');}
   };
   const verifyReport = async(code)=>{ try{const {data}=await api.post(`/reports/${code}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
   const updateServiceStatus=async(code,status)=>{try{const {data}=await api.patch(`/reports/${code}/status`,{status});addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
+  const openDetail=async(code)=>{
+    const requestId=++detailRequestRef.current;
+    setDetailLoading(true);
+    setDetail({code});
+    try{const {data}=await api.get(`/reports/${code}`);if(detailRequestRef.current===requestId)setDetail(data.report);}catch(err){if(detailRequestRef.current===requestId){setDetail(null);addToast(errorMessage(err),'error');}}finally{if(detailRequestRef.current===requestId)setDetailLoading(false);}
+  };
+  const closeDetail=()=>{detailRequestRef.current++;setDetailLoading(false);setDetail(null);};
 
   return (
     <div className="flex flex-col h-full animate-in fade-in">
-      
-      {/* Modal Input Manual (Karang Taruna Notification Form) */}
-      <ModalForm isOpen={showInputModal} onClose={() => setShowInputModal(false)} title="Input Permohonan Warga">
-         <form onSubmit={handleManualInputSubmit} className="space-y-6">
-            <div className="p-4 bg-blue-50 text-blue-800 rounded-xl text-sm mb-2 border border-blue-100 flex items-start gap-3">
-               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-               <p>Gunakan form ini untuk mendata warga yang datang langsung ke posko atau melapor melalui WhatsApp/Telepon posko.</p>
-            </div>
+      <ModalForm isOpen={showInputModal} onClose={closeManual} title="Input Permohonan Warga">
+        <form onSubmit={handleManualInputSubmit} onChange={()=>setManualDirty(true)} className="space-y-6">
+          <div className="p-4 bg-blue-50 text-blue-900 rounded-xl text-sm leading-6 border border-blue-100 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <p>Form ini untuk laporan yang diterima petugas secara langsung, WhatsApp, atau telepon. Isi data berdasarkan informasi warga dan pastikan nomor kontak dapat dikonfirmasi.</p>
+          </div>
+          <FieldGuide label="Sumber informasi" help="Pilih kanal pertama kali warga menyampaikan laporan." required>
+            <select name="source" required className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm font-medium text-slate-900"><option value="datang_langsung">Datang langsung ke posko</option><option value="whatsapp">WhatsApp</option><option value="telepon">Telepon</option></select>
+          </FieldGuide>
+          <FieldGuide label="Kategori laporan" help="Kategori menentukan alur tindak lanjut dan apakah sistem perlu menugaskan ambulans." required>
+            <select value={inputCategory} onChange={(e)=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm font-medium text-slate-900"><option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option></select>
+          </FieldGuide>
+          {inputCategory==='ambulans' && <div><p className="mb-2 text-sm font-bold text-slate-800">Jenis layanan ambulans</p><p className="mb-3 text-xs leading-5 text-slate-500">Darurat untuk kebutuhan cepat. Terjadwal membutuhkan waktu jemput dan durasi layanan.</p><div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl"><button type="button" onClick={() => setInputType('darurat')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'darurat' ? 'bg-white shadow-sm text-red-700' : 'text-slate-600 hover:text-slate-900'}`}>Darurat</button><button type="button" onClick={() => setInputType('terjadwal')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'terjadwal' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}>Terjadwal</button></div></div>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <FieldGuide label="Nama pelapor" help="Nama warga yang menyampaikan laporan." required><input name="name" required minLength={3} placeholder="Nama lengkap" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm text-slate-900" /></FieldGuide>
+            <FieldGuide label="No. kontak" help="Nomor Indonesia aktif untuk konfirmasi petugas." required><input name="phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm text-slate-900" /></FieldGuide>
+            <FieldGuide label="NIK 16 digit" help="Dipakai untuk identifikasi warga. Masukkan tepat 16 angka." required className="md:col-span-2"><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 font-mono text-sm text-slate-900" placeholder="16 digit angka" /></FieldGuide>
+          </div>
+          {inputCategory==='ambulans' && inputType === 'terjadwal' && <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 animate-in fade-in">
+            <FieldGuide label="Jadwal jemput" help="Pilih waktu di masa mendatang. Sistem akan memeriksa konflik jadwal." required><input name="scheduled_at" required type="datetime-local" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm text-slate-900" /></FieldGuide>
+            <FieldGuide label="Estimasi durasi" help="Perkiraan lama ambulans digunakan pada layanan ini." required><select name="service_duration_minutes" defaultValue="120" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></FieldGuide>
+          </div>}
+          <FieldGuide label="Lokasi / alamat terkait" help="Tulis alamat lengkap beserta RT/RW atau patokan agar petugas mudah menemukan lokasi." required><textarea name="pickup_location" required minLength={5} rows={3} placeholder="Alamat lengkap dan patokan" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 resize-none text-sm text-slate-900" /></FieldGuide>
+          <FieldGuide label="Keterangan / isi laporan" help="Jelaskan kondisi, kebutuhan, atau masalah utama secara ringkas tetapi spesifik." required><textarea name="medical_condition" required minLength={3} rows={3} placeholder="Kondisi atau kebutuhan warga" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 resize-none text-sm text-slate-900" /></FieldGuide>
+          <div className="pt-6 flex gap-3 justify-end border-t border-slate-100"><Button type="button" variant="ghost" disabled={manualSubmitting} onClick={closeManual}>Batal</Button><Button type="submit" disabled={manualSubmitting} variant="primary">{manualSubmitting?'Menyimpan...':'Simpan ke Sistem'}</Button></div>
+        </form>
+      </ModalForm>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-bold text-slate-700">Sumber Informasi *</label>
-              <select name="source" required className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] text-sm font-medium">
-                <option value="datang_langsung">Datang Langsung (Ke Posko)</option>
-                <option value="whatsapp">Via WhatsApp / Telepon</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-bold text-slate-700">Kategori Laporan *</label>
-              <select value={inputCategory} onChange={(e)=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] text-sm font-medium">
-                <option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option>
-              </select>
-            </div>
-            {inputCategory==='ambulans' && <div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl">
-              <button type="button" onClick={() => setInputType('darurat')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'darurat' ? 'bg-white shadow-sm text-red-600' : 'text-slate-500 hover:text-slate-700'}`}>Darurat (Cepat)</button>
-              <button type="button" onClick={() => setInputType('terjadwal')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'terjadwal' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Terjadwal</button>
-            </div>}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Nama Pelapor *</label><input name="name" required className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] text-sm" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">No. Kontak *</label><input name="phone" required type="tel" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] text-sm" /></div>
-              <div className="space-y-1.5 md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">NIK (16 Digit) *</label><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} onPaste={(e)=>{e.preventDefault();addToast('NIK harus diketik manual.','info');}} onDrop={(e)=>e.preventDefault()} className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] font-mono text-sm" placeholder="Ketik manual 16 digit" /></div>
-            </div>
-            
-            {inputCategory==='ambulans' && inputType === 'terjadwal' && (
-              <div className="grid grid-cols-1 gap-5 animate-in fade-in">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Jadwal Jemput *</label><input name="scheduled_at" required type="datetime-local" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] text-sm" /></div><div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Durasi *</label><select name="service_duration_minutes" defaultValue="120" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></div></div>
-              </div>
-            )}
-
-            <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Lokasi / Alamat Terkait *</label><textarea name="pickup_location" required rows={3} className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] resize-none text-sm" /></div>
-            <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Keterangan / Isi Laporan *</label><textarea name="medical_condition" required rows={3} className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20] resize-none text-sm" /></div>
-
-            <div className="pt-6 flex gap-3 justify-end border-t border-slate-100">
-              <Button type="button" variant="ghost" onClick={() => setShowInputModal(false)}>Batal</Button>
-              <Button type="submit" variant="primary">Simpan ke Sistem</Button>
-            </div>
-         </form>
+      <ModalForm isOpen={Boolean(detail)} onClose={closeDetail} title="Detail Pelayanan Warga">
+        {detailLoading ? <div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail laporan...</div> : detail && <div className="grid gap-5 sm:grid-cols-2 text-sm">
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-black text-slate-950">{detail.code}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-black uppercase text-slate-950">{detail.status}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nama warga</p><p className="mt-1 text-slate-900">{detail.name}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kontak</p><p className="mt-1 text-slate-900">{detail.phone}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">NIK</p><p className="mt-1 font-mono text-slate-900">{detail.nik_masked}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori</p><p className="mt-1 uppercase text-slate-900">{detail.category}</p></div>
+          <div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Lokasi</p><p className="mt-1 leading-6 text-slate-900">{detail.pickup_location}</p></div>
+          <div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kondisi / laporan</p><p className="mt-1 whitespace-pre-line leading-6 text-slate-900">{detail.medical_condition}</p></div>
+          {detail.scheduled_at&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</p><p className="mt-1 text-slate-900">{new Date(detail.scheduled_at).toLocaleString('id-ID')}</p></div>}
+          {detail.ambulance&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</p><p className="mt-1 font-bold text-slate-900">{detail.ambulance.code}</p></div>}
+          {detail.driver&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Driver</p><p className="mt-1 font-bold text-slate-900">{detail.driver.name}</p></div>}
+          {detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-800"><span>{h.from_status||'awal'}</span><span>→</span><span className="uppercase text-emerald-700">{h.to_status}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}
+        </div>}
       </ModalForm>
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Daftar Pelayanan Warga</h2>
-          <p className="text-sm text-slate-500 font-medium">Manajemen ambulans, pengaduan BPJS, dan laporan bencana dari warga.</p>
-        </div>
-        {(role === 'petugas' || role === 'admin') && (
-          <Button onClick={() => setShowInputModal(true)} variant="primary" className="shadow-lg shadow-[#022b20]/20">
-            <Plus className="w-5 h-5 mr-2"/> Tambah Permohonan Warga
-          </Button>
-        )}
+        <div><h2 className="text-2xl font-black text-slate-950 tracking-tight">Daftar Pelayanan Warga</h2><p className="text-sm text-slate-600 font-medium">Manajemen ambulans, pengaduan BPJS, dan laporan bencana dari warga.</p></div>
+        {(role === 'petugas' || role === 'admin') && <Button onClick={openManual} variant="primary" className="shadow-lg shadow-[#022b20]/20"><Plus className="w-5 h-5 mr-2"/> Tambah Permohonan Warga</Button>}
+      </div>
+
+      <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3">
+        <select value={reportCategoryFilter} onChange={e=>{setReportCategoryFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua kategori</option><option value="ambulans">Ambulans</option><option value="bpjs">BPJS</option><option value="bencana">Bencana</option></select>
+        <select value={reportStatusFilter} onChange={e=>{setReportStatusFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="menunggu">Menunggu</option><option value="diproses">Diproses</option><option value="dijemput">Dijemput</option><option value="selesai">Selesai</option><option value="ditolak">Ditolak</option></select>
+        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{reportLoading?'Memuat data...':`${reportMeta.total} laporan`}</span><span>25 / halaman</span></div>
       </div>
 
       <Card noPadding className="flex-1 flex flex-col min-h-[400px]">
-         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-sm text-left">
-            <thead className="text-xs text-slate-500 uppercase tracking-wider bg-slate-50 border-b border-slate-100">
-              <tr>
-                <th className="px-6 py-5 font-bold">Kode Laporan</th>
-                <th className="px-6 py-5 font-bold">Sumber</th>
-                <th className="px-6 py-5 font-bold">Nama Pemohon</th>
-                <th className="px-6 py-5 font-bold">Kategori</th>
-                <th className="px-6 py-5 font-bold">Jadwal</th><th className="px-6 py-5 font-bold">Status Pelayanan</th>
-                <th className="px-6 py-5 font-bold text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {db.laporan.map((l) => (
-                <tr key={l.id} className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-6 py-5 font-mono font-bold text-slate-900">{l.id}</td>
-                  <td className="px-6 py-5 text-slate-500 uppercase text-xs font-bold">{l.sumber}</td>
-                  <td className="px-6 py-5 text-slate-700 font-medium">{l.nama}</td>
-                  <td className="px-6 py-5"><span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${l.kategori==='bpjs'?'bg-blue-50 text-blue-700':l.kategori==='bencana'?'bg-orange-50 text-orange-700':'bg-emerald-50 text-emerald-700'}`}>{l.kategori||'ambulans'}</span></td>
-                  <td className="px-6 py-5 text-xs text-slate-600"><div className="font-bold">{l.service_start_at ? new Date(l.service_start_at).toLocaleString('id-ID') : ((l.kategori||'ambulans')==='ambulans' && l.jenis==='darurat'?'Saat ditugaskan':'-')}</div>{l.service_end_at && <div className="text-slate-400 mt-1">s/d {new Date(l.service_end_at).toLocaleString('id-ID')}</div>} {l.ambulance && <div className="mt-1 text-emerald-700">{l.ambulance} • {l.driver}</div>}</td>
-                  <td className="px-6 py-5">
-                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border
-                       ${l.status === 'menunggu' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
-                         l.status === 'selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                       {l.status === 'menunggu' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-2"></span>}
-                       {l.status === 'selesai' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></span>}
-                       {l.status === 'diproses' && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-2"></span>}
-                       {l.status.toUpperCase()}
-                     </span>
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <div className="flex justify-end gap-2">
-                      {l.status==='menunggu' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Tugaskan Ambulans?','Sistem akan memilih ambulans dan driver yang tidak bentrok pada interval layanan ini.','Proses','Batal',()=>processReport(l.id),'success')}>Proses Penugasan</Button>}
-                      {l.status==='menunggu' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Proses Pengaduan?','Laporan akan ditandai sedang ditangani Karang Taruna tanpa penugasan ambulans.','Proses','Batal',()=>updateServiceStatus(l.id,'diproses'),'success')}>Proses Pengaduan</Button>}
-                      {l.status==='diproses' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Mulai Penjemputan?','Status unit akan menjadi bertugas.','Mulai','Batal',()=>updateServiceStatus(l.id,'dijemput'),'success')}>Dijemput</Button>}
-                      {l.status==='diproses' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Pengaduan?','Pengaduan akan ditandai selesai dan dapat diverifikasi admin.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesaikan</Button>}
-                      {l.status==='dijemput' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Layanan?','Ambulans dan driver akan dilepas jika tidak ada layanan aktif lain.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesai</Button>}
-                      {l.status==='selesai' && role==='admin' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Verifikasi Administrasi','Verifikasi laporan layanan selesai.','Verifikasi','Batal',()=>verifyReport(l.id),'success')}>Verifikasi Admin</Button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-         </div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm text-left">
+          <thead className="text-xs text-slate-700 uppercase tracking-wider bg-slate-50 border-b border-slate-100"><tr><th className="px-6 py-5 font-bold">Kode Laporan</th><th className="px-6 py-5 font-bold">Sumber</th><th className="px-6 py-5 font-bold">Nama Pemohon</th><th className="px-6 py-5 font-bold">Kategori</th><th className="px-6 py-5 font-bold">Jadwal</th><th className="px-6 py-5 font-bold">Status Pelayanan</th><th className="px-6 py-5 font-bold text-right">Aksi</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">{!reportLoading&&reportRows.length===0&&<tr><td colSpan={7} className="px-6 py-12 text-center text-sm font-semibold text-slate-500">Tidak ada laporan pada filter ini.</td></tr>}{reportRows.map((l) => <tr key={l.id} className="hover:bg-slate-50/70 transition-colors text-slate-800">
+            <td className="px-6 py-5 font-mono font-bold text-slate-950">{l.id}</td><td className="px-6 py-5 text-slate-600 uppercase text-xs font-bold">{l.sumber}</td><td className="px-6 py-5 text-slate-900 font-medium">{l.nama}</td><td className="px-6 py-5"><span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${l.kategori==='bpjs'?'bg-blue-50 text-blue-700':l.kategori==='bencana'?'bg-orange-50 text-orange-700':'bg-emerald-50 text-emerald-700'}`}>{l.kategori||'ambulans'}</span></td>
+            <td className="px-6 py-5 text-xs text-slate-700"><div className="font-bold">{l.service_start_at ? new Date(l.service_start_at).toLocaleString('id-ID') : ((l.kategori||'ambulans')==='ambulans' && l.jenis==='darurat'?'Saat ditugaskan':'-')}</div>{l.service_end_at && <div className="text-slate-500 mt-1">s/d {new Date(l.service_end_at).toLocaleString('id-ID')}</div>} {l.ambulance && <div className="mt-1 font-semibold text-emerald-700">{l.ambulance} • {l.driver}</div>}</td>
+            <td className="px-6 py-5"><span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${l.status === 'menunggu' ? 'bg-amber-50 text-amber-700 border-amber-200' : l.status === 'selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{l.status.toUpperCase()}</span></td>
+            <td className="px-6 py-5 text-right"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openDetail(l.id)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{l.status==='menunggu' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Tugaskan Ambulans?','Sistem akan memilih ambulans dan driver yang tidak bentrok pada interval layanan ini.','Proses','Batal',()=>processReport(l.id),'success')}>Proses Penugasan</Button>}{l.status==='menunggu' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Proses Pengaduan?','Laporan akan ditandai sedang ditangani Karang Taruna tanpa penugasan ambulans.','Proses','Batal',()=>updateServiceStatus(l.id,'diproses'),'success')}>Proses Pengaduan</Button>}{l.status==='diproses' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Mulai Penjemputan?','Status unit akan menjadi bertugas.','Mulai','Batal',()=>updateServiceStatus(l.id,'dijemput'),'success')}>Dijemput</Button>}{l.status==='diproses' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Pengaduan?','Pengaduan akan ditandai selesai dan dapat diverifikasi admin.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesaikan</Button>}{l.status==='dijemput' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Layanan?','Ambulans dan driver akan dilepas jika tidak ada layanan aktif lain.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesai</Button>}{l.status==='selesai' && role==='admin' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Verifikasi Administrasi','Verifikasi laporan layanan selesai.','Verifikasi','Batal',()=>verifyReport(l.id),'success')}>Verifikasi Admin</Button>}</div></td>
+          </tr>)}</tbody>
+        </table></div>
+        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {reportMeta.current_page} dari {reportMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page<=1} onClick={()=>setReportPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page>=reportMeta.last_page} onClick={()=>setReportPage(p=>p+1)}>Berikutnya</Button></div></div>
       </Card>
     </div>
   );
@@ -757,36 +935,134 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
 
 const ViewAmbulans = ({ db, refreshDashboard, role, addToast }) => {
   const [open,setOpen]=useState(false);
-  const submit=async(e)=>{e.preventDefault();try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.capacity=Number(f.capacity);await api.post('/ambulances',f);addToast('Unit ambulans ditambahkan.','success');setOpen(false);refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
-  return <div><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black">Manajemen Ambulans</h2><p className="text-sm text-slate-500">Reservasi dicek berdasarkan interval waktu, bukan hanya status unit.</p></div>{role==='admin'&&<Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Unit</Button>}</div><Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm"><thead><tr className="bg-slate-50"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Nopol</th><th className="p-4 text-left">Kapasitas</th><th className="p-4 text-left">Status Saat Ini</th></tr></thead><tbody>{db.ambulans.map(a=><tr key={a.id} className="border-t"><td className="p-4 font-bold">{a.id}</td><td className="p-4">{a.nopol}</td><td className="p-4">{a.kapasitas}</td><td className="p-4 uppercase"><span className={`px-3 py-1 rounded-full text-xs font-bold ${a.status==='tersedia'?'bg-emerald-50 text-emerald-700':a.status==='maintenance'?'bg-red-50 text-red-700':'bg-blue-50 text-blue-700'}`}>{a.status}</span></td></tr>)}</tbody></table></div></Card><ModalForm isOpen={open} onClose={()=>setOpen(false)} title="Tambah Unit Ambulans"><form onSubmit={submit} className="space-y-4"><input name="code" required placeholder="KT-03" className="w-full p-3 border rounded-xl"/><input name="plate_number" required placeholder="Nomor polisi" className="w-full p-3 border rounded-xl"/><input name="capacity" required type="number" min="1" max="10" placeholder="Kapasitas" className="w-full p-3 border rounded-xl"/><Button type="submit" className="w-full sm:w-auto">Simpan</Button></form></ModalForm></div>;
+  const [editing,setEditing]=useState(null);
+  const [detail,setDetail]=useState(null);
+  const submit=async(e)=>{e.preventDefault();try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.capacity=Number(f.capacity);if(editing){await api.patch(`/ambulances/${editing.db_id}`,f);addToast('Data ambulans diperbarui.','success');}else{await api.post('/ambulances',f);addToast('Unit ambulans ditambahkan.','success');}setOpen(false);setEditing(null);refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
+  const openCreate=()=>{setEditing(null);setOpen(true);};
+  const openEdit=(a)=>{setEditing(a);setOpen(true);};
+  return <div>
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Ambulans</h2><p className="text-sm text-slate-600">Lihat status unit dan perbarui data operasional ambulans dari kolom aksi.</p></div>{role==='admin'&&<Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah Unit</Button>}</div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Nopol</th><th className="p-4 text-left">Kapasitas</th><th className="p-4 text-left">Status Saat Ini</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{db.ambulans.map(a=><tr key={a.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-bold text-slate-950">{a.id}</td><td className="p-4">{a.nopol}</td><td className="p-4">{a.kapasitas} orang</td><td className="p-4 uppercase"><span className={`px-3 py-1 rounded-full text-xs font-bold ${a.status==='tersedia'?'bg-emerald-50 text-emerald-700':a.status==='maintenance'?'bg-red-50 text-red-700':'bg-blue-50 text-blue-700'}`}>{a.status}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>setDetail(a)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{role==='admin'&&<Button size="sm" variant="outline" onClick={()=>openEdit(a)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>}</div></td></tr>)}</tbody></table></div></Card>
+    <ModalForm isOpen={Boolean(detail)} onClose={()=>setDetail(null)} title="Detail Unit Ambulans">{detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode unit</p><p className="mt-1 font-black text-slate-950">{detail.id}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nomor polisi</p><p className="mt-1 font-bold text-slate-950">{detail.nopol}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kapasitas</p><p className="mt-1 text-slate-900">{detail.kapasitas} orang</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{detail.status}</p></div>{detail.notes&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Catatan</p><p className="mt-1 leading-6 text-slate-900">{detail.notes}</p></div>}</div>}</ModalForm>
+    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Unit Ambulans':'Tambah Unit Ambulans'}><form onSubmit={submit} className="space-y-5">
+      {!editing&&<FieldGuide label="Kode unit" help="Kode unik internal, contoh KT-03." required><input name="code" required placeholder="KT-03" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>}
+      <FieldGuide label="Nomor polisi" help="Nomor registrasi kendaraan yang ditampilkan di administrasi unit." required><input name="plate_number" required defaultValue={editing?.nopol||''} placeholder="Z 1234 AB" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Kapasitas" help="Jumlah penumpang/pasien yang dapat dilayani sesuai kebijakan operasional." required><input name="capacity" required type="number" min="1" max="10" defaultValue={editing?.kapasitas||1} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      {editing&&<FieldGuide label="Status unit" help="Pilih maintenance hanya jika unit tidak boleh menerima penugasan baru." required><select name="status" defaultValue={editing.status} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="tersedia">Tersedia</option><option value="dipesan">Dipesan</option><option value="bertugas">Bertugas</option><option value="maintenance">Maintenance</option></select></FieldGuide>}
+      <FieldGuide label="Catatan" help="Opsional, misalnya kondisi kendaraan atau informasi servis."><textarea name="notes" rows={3} defaultValue={editing?.notes||''} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <Button type="submit" className="w-full sm:w-auto">{editing?'Simpan Perubahan':'Simpan Unit'}</Button>
+    </form></ModalForm>
+  </div>;
 };
 
 const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const [open,setOpen]=useState(false);
+  const [detail,setDetail]=useState(null);
+  const [detailLoading,setDetailLoading]=useState(false);
+  const transactionDetailRequestRef=useRef(0);
+  const [rejectTarget,setRejectTarget]=useState(null);
+  const [rejectSubmitting,setRejectSubmitting]=useState(false);
+  const [transactionSubmitting,setTransactionSubmitting]=useState(false);
+  const [settingsSubmitting,setSettingsSubmitting]=useState(false);
   const [openSettings,setOpenSettings]=useState(false);
   const [setting,setSetting]=useState(null);
   const loadSetting=()=>api.get('/infaq/settings').then(r=>setSetting(r.data.setting)).catch(()=>{});
-  useEffect(()=>{if(role==='admin')loadSetting();},[role]);
-  if(role!=='admin') return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses Admin.</b></Card>;
-  const submit=async(e)=>{e.preventDefault();try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.amount=Number(f.amount);await api.post('/transactions',f);addToast('Transaksi dicatat dan menunggu verifikasi.','success');setOpen(false);refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
-  const saveSetting=async(e)=>{e.preventDefault();try{const form=new FormData(e.currentTarget);form.set('is_active',e.currentTarget.is_active.checked?'1':'0');await api.post('/infaq/settings',form,{headers:{'Content-Type':'multipart/form-data'}});addToast('QR dan pengaturan infaq diperbarui.','success');setOpenSettings(false);loadSetting();}catch(err){addToast(errorMessage(err),'error');}};
+  const transactionRequestUuidRef=useRef(newRequestUuid());
+  const [transactionRows,setTransactionRows]=useState([]);
+  const [transactionPage,setTransactionPage]=useState(1);
+  const [transactionMeta,setTransactionMeta]=useState({current_page:1,last_page:1,total:0});
+  const [transactionStatusFilter,setTransactionStatusFilter]=useState('');
+  const [transactionTypeFilter,setTransactionTypeFilter]=useState('');
+  const [transactionLoading,setTransactionLoading]=useState(false);
+  useEffect(()=>{
+    if(role!=='admin'&&role!=='karta')return;
+    loadSetting();
+    const onRefresh=()=>loadSetting();
+    window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
+    return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);
+  },[role]);
+  useEffect(()=>{
+    if(!['admin','karta'].includes(role))return;
+    let cancelled=false;
+    const load=async()=>{
+      setTransactionLoading(true);
+      try{const {data}=await api.get('/transactions',{params:{page:transactionPage,per_page:25,status:transactionStatusFilter||undefined,type:transactionTypeFilter||undefined}});if(cancelled)return;setTransactionRows((data.data||[]).map(mapTransactionRow));setTransactionMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});}
+      catch(err){if(!cancelled)addToast(errorMessage(err),'error');}
+      finally{if(!cancelled)setTransactionLoading(false);}
+    };
+    load();
+    const onRefresh=()=>load();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
+    return()=>{cancelled=true;window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);};
+  },[role,transactionPage,transactionStatusFilter,transactionTypeFilter]);
+  if(!['admin','karta'].includes(role)) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses Admin atau Karta.</b></Card>;
+  const submit=async(e)=>{e.preventDefault();if(transactionSubmitting)return;setTransactionSubmitting(true);try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.request_uuid=transactionRequestUuidRef.current;f.amount=Number(f.amount);await api.post('/transactions',f);addToast('Transaksi dicatat dan menunggu verifikasi.','success');setOpen(false);transactionRequestUuidRef.current=newRequestUuid();refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}finally{setTransactionSubmitting(false);}};
+  const saveSetting=async(e)=>{e.preventDefault();if(settingsSubmitting)return;setSettingsSubmitting(true);try{const form=new FormData(e.currentTarget);form.set('is_active',e.currentTarget.is_active.checked?'1':'0');await api.post('/infaq/settings',form);addToast('Pengaturan pembayaran diperbarui.','success');setOpenSettings(false);loadSetting();}catch(err){addToast(errorMessage(err),'error');}finally{setSettingsSubmitting(false);}};
   const verify=async(id)=>{try{const {data}=await api.post(`/transactions/${id}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
-  const reject=async(id)=>{const reason=window.prompt('Alasan penolakan bukti pembayaran:');if(!reason)return;try{const {data}=await api.post(`/transactions/${id}/reject`,{reason});addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
+  const submitReject=async(e)=>{e.preventDefault();if(!rejectTarget||rejectSubmitting)return;const reason=String(new FormData(e.currentTarget).get('reason')||'').trim();if(reason.length<5){addToast('Alasan penolakan minimal 5 karakter.','error');return;}setRejectSubmitting(true);try{const {data}=await api.post(`/transactions/${rejectTarget}/reject`,{reason});addToast(data.message,'success');setRejectTarget(null);refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}finally{setRejectSubmitting(false);}};
+  const openTransactionDetail=async(id)=>{const requestId=++transactionDetailRequestRef.current;setDetailLoading(true);setDetail({});try{const {data}=await api.get(`/transactions/${id}`);if(transactionDetailRequestRef.current===requestId)setDetail(data.transaction);}catch(err){if(transactionDetailRequestRef.current===requestId){setDetail(null);addToast(errorMessage(err),'error');}}finally{if(transactionDetailRequestRef.current===requestId)setDetailLoading(false);}};
+  const closeTransactionDetail=()=>{transactionDetailRequestRef.current++;setDetailLoading(false);setDetail(null);};
   const viewProof=async(id)=>{const w=window.open('','_blank');try{const res=await api.get(`/transactions/${id}/proof`,{responseType:'blob'});const url=URL.createObjectURL(res.data);if(w)w.location=url;setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){if(w)w.close();addToast(errorMessage(err),'error');}};
   return <div>
-    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black">Kas, Infaq & Transaksi</h2><p className="text-sm text-slate-500">Infaq warga masuk pending sampai bukti diverifikasi Admin.</p></div><div className="flex flex-col sm:flex-row gap-2"><Button variant="outline" onClick={()=>setOpenSettings(true)}><QrCode className="w-4 h-4 mr-2"/>Pengaturan QR Infaq</Button><Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Transaksi</Button></div></div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead><tr className="bg-slate-50"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar/Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{db.transaksi.map(t=><tr key={t.id} className="border-t"><td className="p-4 font-mono">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className="text-xs font-bold uppercase">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-400">WA ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{t.status}</span></td><td className="p-4"><div className="flex justify-end gap-2">{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>reject(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div></Card>
-    <ModalForm isOpen={open} onClose={()=>setOpen(false)} title="Tambah Transaksi"><form onSubmit={submit} className="space-y-4"><select name="type" className="w-full p-3 border rounded-xl"><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select><input name="category" required placeholder="Kategori" className="w-full p-3 border rounded-xl"/><input name="amount" required type="number" min="1" placeholder="Nominal" className="w-full p-3 border rounded-xl"/><input name="transaction_date" required type="date" className="w-full p-3 border rounded-xl"/><textarea name="description" placeholder="Keterangan" className="w-full p-3 border rounded-xl"/><Button type="submit" className="w-full sm:w-auto">Simpan</Button></form></ModalForm>
-    <ModalForm isOpen={openSettings} onClose={()=>setOpenSettings(false)} title="Pengaturan QR Infaq"><form onSubmit={saveSetting} className="space-y-4"><input name="title" required defaultValue={setting?.title||'Infaq Siaga Karta'} placeholder="Judul" className="w-full p-3 border rounded-xl"/><textarea name="description" defaultValue={setting?.description||''} rows={3} placeholder="Deskripsi infaq" className="w-full p-3 border rounded-xl"/><textarea name="payment_instructions" defaultValue={setting?.payment_instructions||''} rows={3} placeholder="Instruksi pembayaran" className="w-full p-3 border rounded-xl"/><div><label className="block text-sm font-bold mb-2">Gambar QR Code</label><input name="qr" type="file" accept="image/jpeg,image/png,image/webp" className="w-full p-3 border rounded-xl"/><p className="text-xs text-slate-500 mt-2">{setting?.qr_path?'QR sudah tersimpan. Upload file baru untuk mengganti.':'Belum ada QR. Upload sebelum mengaktifkan infaq publik.'}</p></div><label className="flex items-center gap-2"><input name="is_active" type="checkbox" defaultChecked={Boolean(setting?.is_active)} className="w-4 h-4"/><span className="text-sm font-bold">Aktifkan pembayaran infaq publik</span></label><Button type="submit" className="w-full sm:w-auto">Simpan Pengaturan</Button></form></ModalForm>
+    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Kas, Infaq & Transaksi</h2><p className="text-sm text-slate-600">Jenis pemasukan/pengeluaran kini terlihat langsung di tabel. Setiap baris selalu memiliki tombol aksi.</p></div><div className="flex flex-col sm:flex-row gap-2"><Button variant="outline" onClick={()=>{loadSetting();setOpenSettings(true);}}><QrCode className="w-4 h-4 mr-2"/>Pengaturan Pembayaran</Button><Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Transaksi</Button></div></div>
+    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3"><select value={transactionTypeFilter} onChange={e=>{setTransactionTypeFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua jenis</option><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select><select value={transactionStatusFilter} onChange={e=>{setTransactionStatusFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="pending">Pending</option><option value="verified">Verified</option><option value="rejected">Rejected</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{transactionLoading?'Memuat data...':`${transactionMeta.total} transaksi`}</span><span>25 / halaman</span></div></div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Jenis</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar / Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!transactionLoading&&transactionRows.length===0&&<tr><td colSpan={8} className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada transaksi pada filter ini.</td></tr>}{transactionRows.map(t=><tr key={t.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-mono text-slate-950">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${t.tipe==='pemasukan'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{t.tipe}</span></td><td className="p-4"><span className="text-xs font-bold uppercase text-slate-700">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium text-slate-900">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-500">WA ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold text-slate-950">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{t.status}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openTransactionDetail(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Detail</Button>{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>setRejectTarget(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {transactionMeta.current_page} dari {transactionMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page<=1} onClick={()=>setTransactionPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page>=transactionMeta.last_page} onClick={()=>setTransactionPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <ModalForm isOpen={Boolean(detail)} onClose={closeTransactionDetail} title="Detail Transaksi">{detailLoading?<div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail transaksi...</div>:detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-bold text-slate-950">{detail.code}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</p><p className="mt-1 font-bold capitalize text-slate-950">{detail.type}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tanggal</p><p className="mt-1 text-slate-900">{detail.transaction_date}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{detail.status}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori / Pembayar</p><p className="mt-1 text-slate-900">{detail.payer_name||detail.category}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nominal</p><p className="mt-1 text-xl font-black text-slate-950">Rp{Number(detail.amount).toLocaleString('id-ID')}</p></div>{detail.description&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Keterangan</p><p className="mt-1 leading-6 text-slate-900">{detail.description}</p></div>}{detail.rejection_reason&&<div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800"><b>Alasan penolakan:</b> {detail.rejection_reason}</div>}{detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="text-xs font-bold text-slate-800">{h.from_status||'awal'} → <span className="uppercase text-emerald-700">{h.to_status}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}</div>}</ModalForm>
+    <ModalForm isOpen={open} onClose={()=>setOpen(false)} title="Tambah Transaksi"><form onSubmit={submit} className="space-y-5">
+      <FieldGuide label="Jenis transaksi" help="Pemasukan menambah saldo kas. Pengeluaran mengurangi saldo setelah transaksi diverifikasi." required><select name="type" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select></FieldGuide>
+      <FieldGuide label="Kategori" help="Contoh: donasi, operasional, BBM, perawatan ambulans, atau bantuan sosial." required><input name="category" required placeholder="Contoh: bbm" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Nominal" help="Isi angka rupiah tanpa titik atau koma." required><input name="amount" required type="number" min="1" placeholder="Contoh: 250000" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Tanggal transaksi" help="Tanggal transaksi benar-benar terjadi, bukan tanggal input data." required><input name="transaction_date" required type="date" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Keterangan" help="Opsional. Tulis rincian yang membantu proses verifikasi."><textarea name="description" rows={3} placeholder="Rincian transaksi" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <Button disabled={transactionSubmitting} type="submit" className="w-full sm:w-auto">{transactionSubmitting?'Menyimpan...':'Simpan'}</Button>
+    </form></ModalForm>
+    <ModalForm isOpen={Boolean(rejectTarget)} onClose={()=>{if(!rejectSubmitting)setRejectTarget(null);}} title="Tolak Bukti Pembayaran"><form onSubmit={submitReject} className="space-y-5"><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">Penolakan hanya dapat dilakukan saat transaksi masih pending. Alasan akan disimpan agar keputusan dapat diaudit.</div><FieldGuide label="Alasan penolakan" help="Jelaskan masalah pada bukti, nominal, atau identitas pembayaran. Minimal 5 karakter." required><textarea name="reason" required minLength={5} maxLength={500} rows={4} placeholder="Contoh: nominal pada bukti tidak sesuai dengan nominal yang diajukan." className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={rejectSubmitting} onClick={()=>setRejectTarget(null)}>Batal</Button><Button type="submit" variant="danger" disabled={rejectSubmitting}>{rejectSubmitting?'Menyimpan...':'Tolak Pembayaran'}</Button></div></form></ModalForm>
+    <ModalForm isOpen={openSettings} onClose={()=>setOpenSettings(false)} title="Pengaturan Pembayaran"><form onSubmit={saveSetting} className="space-y-5">
+      <FieldGuide label="Judul infaq" help="Judul yang tampil pada modal infaq warga." required><input name="title" required defaultValue={setting?.title||'Infaq Siaga Karta'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Deskripsi" help="Jelaskan tujuan penggunaan dana secara singkat dan transparan."><textarea name="description" defaultValue={setting?.description||''} rows={3} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FieldGuide label="Nama bank" help="Contoh: BCA, BRI, Mandiri, BSI."><input name="bank_name" defaultValue={setting?.bank_name||''} placeholder="Contoh: BRI" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+        <FieldGuide label="Nomor rekening" help="Nomor rekening resmi penerima. Data ini tampil ke warga jika pembayaran aktif."><input name="account_number" inputMode="numeric" defaultValue={setting?.account_number||''} placeholder="Contoh: 1234567890" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+        <FieldGuide label="Nama pemilik rekening" help="Nama pemilik sesuai rekening bank." className="sm:col-span-2"><input name="account_name" defaultValue={setting?.account_name||''} placeholder="Nama pemilik rekening" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      </div>
+      <FieldGuide label="Instruksi pembayaran" help="Tuliskan langkah setelah scan QR, termasuk instruksi upload bukti jika diperlukan."><textarea name="payment_instructions" defaultValue={setting?.payment_instructions||''} rows={3} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Gambar QR Code" help={setting?.has_qr?'QR sudah tersimpan. Upload file baru hanya jika ingin mengganti QR.':'Upload QR sebelum mengaktifkan pembayaran infaq publik.'}><input name="qr" type="file" accept="image/jpeg,image/png,image/webp" className="w-full p-3 border border-slate-300 rounded-xl text-slate-700"/></FieldGuide>
+      {setting?.has_qr&&<label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4"><input name="remove_qr" type="checkbox" value="1" className="mt-1 w-4 h-4"/><span><span className="block text-sm font-bold text-slate-900">Hapus QR lama</span><span className="mt-1 block text-xs text-slate-500">Centang hanya jika pembayaran akan memakai rekening tanpa QR, atau QR lama memang tidak berlaku.</span></span></label>}
+      <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4"><input name="is_active" type="checkbox" defaultChecked={Boolean(setting?.is_active)} className="mt-1 w-4 h-4"/><span><span className="block text-sm font-bold text-slate-900">Aktifkan pembayaran infaq publik</span><span className="mt-1 block text-xs leading-5 text-slate-500">Jika aktif, warga dapat melihat QR dan/atau rekening resmi lalu mengirim bukti pembayaran.</span></span></label>
+      <Button disabled={settingsSubmitting} type="submit" className="w-full sm:w-auto">{settingsSubmitting?'Menyimpan...':'Simpan Pengaturan'}</Button>
+    </form></ModalForm>
   </div>;
 };
 
 const ViewUsers = ({ addToast }) => {
-  const [users,setUsers]=useState([]); const [open,setOpen]=useState(false);
-  const load=()=>api.get('/users').then(r=>setUsers(r.data)).catch(e=>addToast(errorMessage(e),'error'));
-  useEffect(load,[]);
-  const submit=async(e)=>{e.preventDefault();try{await api.post('/users',Object.fromEntries(new FormData(e.currentTarget).entries()));addToast('User berhasil dibuat.','success');setOpen(false);load();}catch(err){addToast(errorMessage(err),'error');}};
-  return <div><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black">Manajemen User</h2><p className="text-sm text-slate-500">Akun Admin dan Petugas.</p></div><Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah User</Button></div><Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead><tr className="bg-slate-50"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Role</th><th className="p-4 text-left">Aktif</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t"><td className="p-4">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4">{u.role}</td><td className="p-4">{u.is_active?'Ya':'Tidak'}</td></tr>)}</tbody></table></div></Card><ModalForm isOpen={open} onClose={()=>setOpen(false)} title="Tambah User"><form onSubmit={submit} className="space-y-4"><input name="name" required placeholder="Nama" className="w-full p-3 border rounded-xl"/><input name="username" required placeholder="Username" className="w-full p-3 border rounded-xl"/><input name="email" type="email" required placeholder="Email" className="w-full p-3 border rounded-xl"/><select name="role" className="w-full p-3 border rounded-xl"><option value="petugas">Petugas</option><option value="admin">Admin</option></select><input name="password" type="password" minLength={10} required placeholder="Password minimal 10 karakter" className="w-full p-3 border rounded-xl"/><Button type="submit" className="w-full sm:w-auto">Simpan</Button></form></ModalForm></div>;
+  const [users,setUsers]=useState([]);
+  const [page,setPage]=useState(1);
+  const [meta,setMeta]=useState({current_page:1,last_page:1,total:0});
+  const [loading,setLoading]=useState(false);
+  const [open,setOpen]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const load=async()=>{setLoading(true);try{const {data}=await api.get('/users',{params:{page,per_page:25}});setUsers(data.data||[]);setMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});}catch(e){addToast(errorMessage(e),'error');}finally{setLoading(false);}};
+  useEffect(()=>{
+    load();
+    const onRefresh=()=>load();
+    window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
+    return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);
+  },[page]);
+  const openCreate=()=>{setEditing(null);setOpen(true);};
+  const openEdit=(u)=>{setEditing(u);setOpen(true);};
+  const submit=async(e)=>{e.preventDefault();try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(editing){if(!payload.password)delete payload.password;await api.patch(`/users/${editing.id}`,payload);addToast('User berhasil diperbarui.','success');}else{await api.post('/users',payload);addToast('User berhasil dibuat.','success');}setOpen(false);setEditing(null);load();}catch(err){addToast(errorMessage(err),'error');}};
+  const toggleActive=async(u)=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');load();}catch(err){addToast(errorMessage(err),'error');}};
+  return <div>
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen User</h2><p className="text-sm text-slate-600">Kelola akun Admin, Petugas, dan Karta. Karta hanya mendapat akses modul keuangan dan pembayaran.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat user...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah User</Button></div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Role</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 uppercase font-bold text-xs">{u.role}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="w-4 h-4 mr-1"/>Edit</Button><Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button></div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit User':'Tambah User'}><form onSubmit={submit} className="space-y-5">
+      <FieldGuide label="Nama lengkap" help="Nama petugas yang tampil pada administrasi sistem." required><input name="name" required defaultValue={editing?.name||''} placeholder="Nama lengkap" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Username" help="Minimal 4 karakter dan harus unik. Dapat digunakan untuk login." required><input name="username" required minLength={4} defaultValue={editing?.username||''} placeholder="username" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Email" help="Email harus unik dan dapat digunakan untuk login." required><input name="email" type="email" required defaultValue={editing?.email||''} placeholder="nama@contoh.id" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <FieldGuide label="Role" help="Admin mengelola sistem penuh. Petugas fokus pelayanan. Karta fokus kas, transaksi, QR, dan rekening pembayaran." required><select name="role" defaultValue={editing?.role||'petugas'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="petugas">Petugas</option><option value="karta">Karta</option><option value="admin">Admin</option></select></FieldGuide>
+      <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika password tidak ingin diubah. Minimal 10 karakter jika diisi.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} placeholder={editing?'Kosongkan jika tidak diubah':'Minimal 10 karakter'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
+      <Button type="submit" className="w-full sm:w-auto">{editing?'Simpan Perubahan':'Simpan User'}</Button>
+    </form></ModalForm>
+  </div>;
 };
 
 const ViewLaporan = ({ addToast, role }) => {
@@ -794,8 +1070,8 @@ const ViewLaporan = ({ addToast, role }) => {
   return <div className="max-w-4xl mx-auto animate-in fade-in">
     <Card className="mb-6 border-transparent shadow-lg bg-gradient-to-br from-[#022b20] to-[#011a13] text-white"><div className="flex items-center gap-4 sm:gap-5"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileSpreadsheet className="w-7 h-7 text-emerald-300"/></div><div><h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">Download Laporan Sistem</h2><p className="text-emerald-100/80 text-sm font-medium">Klik format yang dibutuhkan. File langsung terunduh tanpa membuka tab cetak.</p></div></div></Card>
     <div className="grid gap-4">
-      <Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup ambulans, pengaduan BPJS, laporan bencana, status, dan petugas layanan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>
-      {role==='admin'&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {(role==='admin'||role==='petugas')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup ambulans, pengaduan BPJS, laporan bencana, status, dan petugas layanan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {(role==='admin'||role==='karta')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
     </div>
   </div>;
 };
@@ -807,6 +1083,17 @@ export default function App() {
     return 'warga';
   };
   const [role, setRoleState] = useState(initialRoleFromPath);
+  const [currentUser,setCurrentUser]=useState(null);
+  const [db, setDb] = useState({laporan:[],ambulans:[],driver:[],transaksi:[],program:[]});
+  const [publicStats,setPublicStats]=useState({ambulans_tersedia:0,layanan_selesai:0,program_aktif:0,bantuan_disalurkan:0});
+  const [dashboardStats,setDashboardStats]=useState({saldo:0,pemasukan_bulan:0,pengeluaran_bulan:0,laporan_aktif:0,ambulans_tersedia:0,daily:[],activity:[]});
+  const [toasts, setToasts] = useState([]);
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false });
+  const dashboardInFlight=useRef(null);
+  const revisionRef=useRef(null);
+  const notificationSignatureRef=useRef(null);
+  const sessionWarningRef=useRef('');
+
   const setRole = (nextRole, options = {}) => {
     setRoleState(nextRole);
     const nextPath = nextRole === 'warga' ? '/' : nextRole === 'login' ? '/portal' : '/dashboard';
@@ -815,53 +1102,140 @@ export default function App() {
       window.history[method]({}, '', nextPath);
     }
   };
-  const [currentUser,setCurrentUser]=useState(null);
-  const [db, setDb] = useState({laporan:[],ambulans:[],driver:[],transaksi:[],program:[]});
-  const [publicStats,setPublicStats]=useState({ambulans_tersedia:0,layanan_selesai:0,program_aktif:0,bantuan_disalurkan:0});
-  const [dashboardStats,setDashboardStats]=useState({saldo:0,pemasukan_bulan:0,pengeluaran_bulan:0,laporan_aktif:0,ambulans_tersedia:0,daily:[]});
-  const [toasts, setToasts] = useState([]);
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false });
-  const addToast = (msg, type = 'info') => { const id=Date.now()+Math.random(); setToasts(p=>[...p,{id,msg,type}]); setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000); };
-  const loadPublic=async()=>{try{const {data}=await api.get('/public/bootstrap');setPublicStats(data);setDb(p=>({...p,program:data.program||[]}));}catch{}};
-  const refreshDashboard=async()=>{try{const {data}=await api.get('/dashboard');setDb(data.db);setDashboardStats(data.stats||{});}catch(err){if(err?.response?.status===401){setToken(null);setCurrentUser(null);setRole('warga');}else addToast(errorMessage(err),'error');}};
+  const addToast = (msg, type = 'info') => {
+    const id=Date.now()+Math.random();
+    setToasts(p=>[...p,{id,msg,type}]);
+    setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000);
+  };
+  const loadPublic=async()=>{
+    try{const {data}=await api.get('/public/bootstrap');setPublicStats(data);setDb(p=>({...p,program:data.program||[]}));}catch{}
+  };
+  const refreshDashboard=async()=>{
+    if(!getToken()) return;
+    if(dashboardInFlight.current) return dashboardInFlight.current;
+    dashboardInFlight.current=(async()=>{
+      try{
+        const {data}=await api.get('/dashboard');
+        setDb(data.db);
+        setDashboardStats(data.stats||{});
+        window.dispatchEvent(new CustomEvent('siagakarta:dashboard-refreshed'));
+      }catch(err){
+        if(err?.response?.status!==401) addToast(errorMessage(err),'error');
+      }finally{dashboardInFlight.current=null;}
+    })();
+    return dashboardInFlight.current;
+  };
+  const restoreSession=async({replace=false}={})=>{
+    if(!getToken()) return false;
+    try{
+      const {data}=await api.get('/auth/me');
+      setCurrentUser(data.user);
+      setAuthMeta({expires_at:data.expires_at,absolute_expires_at:data.absolute_expires_at});
+      setRole(data.user.role,{replace});
+      return true;
+    }catch{
+      setToken(null);
+      setCurrentUser(null);
+      return false;
+    }
+  };
+  const refreshSession=async()=>{
+    if(!getToken() || document.visibilityState!=='visible') return;
+    try{
+      const {data}=await api.post('/auth/refresh');
+      setAuthMeta({expires_at:data.expires_at,absolute_expires_at:data.absolute_expires_at});
+    }catch(err){ if(err?.response?.status!==401) console.warn('Session refresh failed'); }
+  };
+  const checkSync=async()=>{
+    if(!getToken() || document.visibilityState!=='visible' || !['admin','petugas','karta'].includes(role)) return;
+    try{
+      const {data}=await api.get('/sync');
+      const signature=JSON.stringify(data.revisions||{});
+      if(revisionRef.current && revisionRef.current!==signature) await refreshDashboard();
+      revisionRef.current=signature;
+      const notificationSignature=JSON.stringify(data.notifications||{});
+      if(notificationSignatureRef.current && notificationSignatureRef.current!==notificationSignature) window.dispatchEvent(new CustomEvent('siagakarta:notifications-changed'));
+      notificationSignatureRef.current=notificationSignature;
+    }catch{}
+  };
+
   useEffect(()=>{
     loadPublic();
-    const restoreSession = () => {
-      if (!getToken()) {
-        if (window.location.pathname.startsWith('/dashboard')) setRole('login', { replace: true });
-        return;
+    const boot=async()=>{
+      if(getToken()) {
+        const ok=await restoreSession({replace:window.location.pathname.startsWith('/dashboard')});
+        if(!ok && window.location.pathname.startsWith('/dashboard')) setRole('login',{replace:true});
+      } else {
+        if(window.location.pathname.startsWith('/dashboard')) setRole('login',{replace:true});
+        requestSharedSession();
       }
-      api.get('/auth/me').then(({data})=>{
-        setCurrentUser(data.user);
-        setRole(data.user.role, { replace: window.location.pathname.startsWith('/dashboard') });
-        refreshDashboard();
-      }).catch(()=>{
-        setToken(null);
+    };
+    boot();
+
+    const unsubscribe=subscribeAuth(async msg=>{
+      if(msg.type==='SESSION_REQUEST') { broadcastSession(); return; }
+      if((msg.type==='SESSION_RESPONSE'||msg.type==='TOKEN_SET') && msg.token) {
+        setToken(msg.token,msg.meta,{broadcast:false});
+        await restoreSession({replace:window.location.pathname.startsWith('/portal')||window.location.pathname.startsWith('/dashboard')});
+      }
+      if(msg.type==='LOGOUT') {
+        setToken(null,null,{broadcast:false});
         setCurrentUser(null);
-        if (window.location.pathname.startsWith('/dashboard')) setRole('login', { replace: true });
-      });
+        if(window.location.pathname.startsWith('/dashboard')||window.location.pathname.startsWith('/portal')) setRole('login',{replace:true});
+      }
+    });
+    const onUnauthorized=()=>{
+      setToken(null);
+      setCurrentUser(null);
+      setRole(window.location.pathname.startsWith('/dashboard')?'login':'warga',{replace:true});
+      addToast('Sesi berakhir. Silakan login kembali.','error');
     };
-    restoreSession();
-    const handlePopState = () => {
-      const path = window.location.pathname;
-      if (path === '/' || path === '') setRoleState('warga');
-      else if (path.startsWith('/portal')) setRoleState('login');
-      else if (path.startsWith('/dashboard')) {
-        if (getToken()) restoreSession();
-        else setRole('login', { replace: true });
-      } else setRole('warga', { replace: true });
+    const handlePopState=()=>{
+      const path=window.location.pathname;
+      if(path==='/'||path==='') setRoleState('warga');
+      else if(path.startsWith('/portal')) { if(getToken()) restoreSession({replace:true}); else {setRoleState('login');requestSharedSession();} }
+      else if(path.startsWith('/dashboard')) { if(getToken()) restoreSession({replace:true}); else {setRoleState('login');requestSharedSession();} }
+      else setRole('warga',{replace:true});
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('siagakarta:unauthorized',onUnauthorized);
+    window.addEventListener('popstate',handlePopState);
+    return ()=>{unsubscribe();window.removeEventListener('siagakarta:unauthorized',onUnauthorized);window.removeEventListener('popstate',handlePopState);};
   },[]);
-  useEffect(()=>{if(role==='admin'||role==='petugas') refreshDashboard();},[role]);
+
+  useEffect(()=>{
+    if(!['admin','petugas','karta'].includes(role)) return;
+    revisionRef.current=null;
+    notificationSignatureRef.current=null;
+    refreshDashboard();
+    checkSync();
+  },[role]);
+
+  useEffect(()=>{
+    const onVisible=()=>{ if(document.visibilityState==='visible'){refreshSession();checkSync();} };
+    document.addEventListener('visibilitychange',onVisible);
+    const refreshTimer=setInterval(refreshSession,10*60*1000);
+    const syncTimer=setInterval(checkSync,10000);
+    const warningTimer=setInterval(()=>{
+      const meta=getAuthMeta();
+      const hard=meta.absolute_expires_at ? new Date(meta.absolute_expires_at).getTime() : 0;
+      if(!hard) return;
+      const left=hard-Date.now();
+      if(left>0 && left<=5*60*1000 && sessionWarningRef.current!==meta.absolute_expires_at){
+        sessionWarningRef.current=meta.absolute_expires_at;
+        addToast('Sesi maksimum akan berakhir kurang dari 5 menit lagi. Simpan pekerjaan Anda.','info');
+      }
+    },30000);
+    return ()=>{document.removeEventListener('visibilitychange',onVisible);clearInterval(refreshTimer);clearInterval(syncTimer);clearInterval(warningTimer);};
+  },[role]);
+
   const requestConfirm=(title,msg,confirmText,cancelText,onConfirm,type='danger')=>setConfirmModal({isOpen:true,title,msg,confirmText,cancelText,type,onConfirm:()=>{Promise.resolve(onConfirm()).finally(()=>setConfirmModal({isOpen:false}));},onCancel:()=>setConfirmModal({isOpen:false})});
   const updateDB=(table,newData)=>setDb(prev=>({...prev,[table]:newData}));
+
   return <>
     <div className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[9999] flex flex-col gap-3 pointer-events-none">{toasts.map(t=><div key={t.id} className="pointer-events-auto bg-[#111] text-white px-4 sm:px-5 py-3.5 rounded-xl w-full sm:w-auto shadow-2xl text-sm font-bold flex items-center gap-3">{t.type==='success'?<CheckCircle2 className="w-5 h-5 text-emerald-400"/>:<AlertCircle className={`w-5 h-5 ${t.type==='error'?'text-red-400':'text-blue-400'}`}/>} {t.msg}</div>)}</div>
     <ConfirmModal {...confirmModal}/>
     {role==='warga'&&<PublicView setRole={setRole} db={db} publicStats={publicStats} addToast={addToast}/>} 
     {role==='login'&&<Login setRole={setRole} addToast={addToast} onLogin={setCurrentUser}/>} 
-    {(role==='admin'||role==='petugas')&&<DashboardLayout role={role} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>} 
+    {['admin','petugas','karta'].includes(role)&&<DashboardLayout role={role} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>} 
   </>;
 }

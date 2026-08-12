@@ -31,13 +31,13 @@ curl http://127.0.0.1:8080/up
 
 Aplikasi sengaja hanya dibind ke `127.0.0.1`, sehingga origin tidak terekspos langsung ke Internet.
 
-Seed akun awal hanya saat instalasi baru:
+Untuk production baru, jangan seed akun demo. Buat Admin pertama secara interaktif setelah container sehat:
 
 ```bash
-docker compose exec app php artisan db:seed --force
+docker compose exec app php artisan siagakarta:create-admin --name="Administrator" --email=admin@example.com --username=admin
 ```
 
-Ganti password akun seed sebelum produksi.
+Password diminta tersembunyi di terminal dan tidak disimpan di command history.
 
 ## 3. Cloudflare Tunnel
 
@@ -56,7 +56,7 @@ docker compose --profile cloudflare up -d
 Cek log:
 
 ```bash
-docker compose logs -f cloudflared app
+docker compose logs -f cloudflared app scheduler
 ```
 
 ## 4. Setting Cloudflare yang disarankan
@@ -75,7 +75,7 @@ docker compose build --pull
 docker compose --profile cloudflare up -d
 ```
 
-Migration otomatis berjalan saat container `app` start. Backup database dan volume storage sebelum update produksi.
+Migration otomatis berjalan saat container `app` start. Service `scheduler` menjalankan maintenance Laravel harian setelah app sehat. Backup database dan volume storage sebelum update produksi.
 
 ## 6. Backup penting
 
@@ -116,7 +116,7 @@ Lalu uji juga domain Cloudflare:
 
 ## Build asset
 
-ZIP source deployment sengaja tidak membawa `node_modules`, `vendor`, atau `public/build`. Dockerfile membangun dependency Composer dan Vite di build stage. Gunakan:
+Dockerfile tidak bergantung pada `node_modules`, `vendor`, atau `public/build` dari host. Dependency Composer dan Vite dibangun ulang di build stage image. Gunakan:
 
 ```bash
 docker compose build --pull

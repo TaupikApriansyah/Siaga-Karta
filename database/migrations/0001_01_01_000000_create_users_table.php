@@ -12,7 +12,7 @@ return new class extends Migration {
             $table->string('name');
             $table->string('email')->unique();
             $table->string('username')->nullable()->unique();
-            $table->enum('role', ['admin', 'petugas'])->default('petugas')->index();
+            $table->string('role', 20)->default('petugas')->index();
             $table->boolean('is_active')->default(true)->index();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
