@@ -31,6 +31,11 @@ if [ "${1:-}" = "apache2-foreground" ]; then
     done
   fi
 
+  if [ "${DEMO_MODE:-false}" = "true" ]; then
+    echo "DEMO_MODE aktif: menyinkronkan akun dan data demo..."
+    php artisan db:seed --force
+  fi
+
   php artisan config:cache
   php artisan route:cache
   php artisan view:cache

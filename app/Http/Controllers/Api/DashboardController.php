@@ -16,7 +16,7 @@ class DashboardController extends Controller
     {
         $role=$request->attributes->get('api_user')->role;
         $canOperations=in_array($role,['admin','petugas'],true);
-        $canFinance=in_array($role,['admin','karta'],true);
+        $canFinance=in_array($role,['admin','petugas'],true);
 
         $laporan=$canOperations
             ? Report::query()->select('id','code','citizen_id','ambulance_id','driver_id','pickup_location','medical_condition','type','category','status','source','scheduled_at','service_start_at','service_end_at','created_at')
@@ -46,8 +46,10 @@ class DashboardController extends Controller
         }
 
         $activityQuery=AuditLog::query()->select('id','user_id','action','subject_type','subject_id','created_at')->with('user:id,name')->latest()->limit(8);
-        if($role==='petugas') $activityQuery->where(function($q){$q->where('action','like','report.%')->orWhere('action','like','ambulance.%');});
-        if($role==='karta') $activityQuery->where(function($q){$q->where('action','like','transaction.%')->orWhere('action','like','infaq.%');});
+        if($role==='petugas') $activityQuery->where(function($q){
+            $q->where('action','like','report.%')->orWhere('action','like','ambulance.%')
+              ->orWhere('action','like','transaction.%')->orWhere('action','like','infaq.%');
+        });
 
         $saldo=$pemasukan=$pengeluaran=null;
         if($canFinance){

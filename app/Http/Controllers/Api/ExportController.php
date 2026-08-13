@@ -27,7 +27,7 @@ class ExportController extends Controller
     {
         return response()->streamDownload(function(){
             $o=fopen('php://output','w'); fwrite($o,"\xEF\xBB\xBF");
-            $this->putRow($o,['Kode','Tanggal','Nama','Jenis','Sumber','Status','Mulai Layanan','Selesai Rencana/Aktual','Lokasi','Ambulans','Driver']);
+            $this->putRow($o,['Kode','Tanggal','Nama','Jenis','Sumber','Status','Mulai Layanan','Selesai Rencana/Aktual','Lokasi','Ambulans','Pengemudi']);
             Report::where('category','ambulans')->with(['citizen:id,name','ambulance:id,code,plate_number','driver:id,name'])
                 ->lazyByIdDesc(500)->each(function($r)use($o){
                     $this->putRow($o,[$r->code,$r->created_at->format('Y-m-d H:i'),$r->citizen?->name,$r->type,$r->source,$r->status,$r->service_start_at?->format('Y-m-d H:i'),$r->service_end_at?->format('Y-m-d H:i'),$r->pickup_location,$r->ambulance?->code,$r->driver?->name]);
@@ -40,7 +40,7 @@ class ExportController extends Controller
     {
         return response()->streamDownload(function(){
             $o=fopen('php://output','w'); fwrite($o,"\xEF\xBB\xBF");
-            $this->putRow($o,['Kode','Tanggal','Kategori','Jenis','Nama','Sumber','Status','Lokasi/Kejadian','Keterangan','Jadwal','Ambulans','Driver']);
+            $this->putRow($o,['Kode','Tanggal','Kategori','Jenis','Nama','Sumber','Status','Lokasi/Kejadian','Keterangan','Jadwal','Ambulans','Pengemudi']);
             Report::with(['citizen:id,name','ambulance:id,code,plate_number','driver:id,name'])
                 ->lazyByIdDesc(500)->each(function($r)use($o){
                     $this->putRow($o,[$r->code,$r->created_at->format('Y-m-d H:i'),$r->category,$r->type,$r->citizen?->name,$r->source,$r->status,$r->pickup_location,$r->medical_condition,$r->scheduled_at?->format('Y-m-d H:i'),$r->ambulance?->code,$r->driver?->name]);
@@ -72,14 +72,14 @@ class ExportController extends Controller
     public function ambulancePdf()
     {
         $rows=Report::where('category','ambulans')->with(['citizen:id,name','ambulance:id,code','driver:id,name'])->latest()->limit(1000)->get();
-        $lines=$rows->map(fn($r)=>sprintf('%s | %s | %s | %s | %s | %s - %s | Unit: %s | Driver: %s',$r->code,$r->created_at->format('d-m-Y H:i'),$r->citizen?->name,$r->type,$r->status,$r->service_start_at?->format('d-m-Y H:i')??'-',$r->service_end_at?->format('d-m-Y H:i')??'-',$r->ambulance?->code??'-',$r->driver?->name??'-'))->all();
+        $lines=$rows->map(fn($r)=>sprintf('%s | %s | %s | %s | %s | %s - %s | Unit: %s | Pengemudi: %s',$r->code,$r->created_at->format('d-m-Y H:i'),$r->citizen?->name,$r->type,$r->status,$r->service_start_at?->format('d-m-Y H:i')??'-',$r->service_end_at?->format('d-m-Y H:i')??'-',$r->ambulance?->code??'-',$r->driver?->name??'-'))->all();
         $pdf=SimplePdf::make('Laporan Operasional Ambulans',$lines);
         return response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="laporan-ambulans-'.now()->format('Ymd-His').'.pdf"','Cache-Control'=>'private, no-store']);
     }
 
     public function financePdf(Request $request)
     {
-        abort_unless(in_array($request->attributes->get('api_user')->role,['admin','karta'],true),403);
+        abort_unless(in_array($request->attributes->get('api_user')->role,['admin','petugas'],true),403);
         $rows=Transaction::latest('transaction_date')->latest('id')->limit(1500)->get();
         $saldo=(int)Transaction::where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
         $lines=['SALDO TERVERIFIKASI: Rp '.number_format($saldo,0,',','.')];

@@ -35,6 +35,11 @@ class PublicController extends Controller
                 'program_aktif'=>$programs->count(),
                 'bantuan_disalurkan'=>(int)Program::sum('distributed_amount'),
                 'program'=>$programs,
+                'demo'=>filter_var(env('DEMO_MODE',false), FILTER_VALIDATE_BOOL) ? [
+                    'enabled'=>true,
+                    'usernames'=>['admin','petugas'],
+                    'password'=>(string)env('DEMO_PASSWORD','Rajawali21'),
+                ] : ['enabled'=>false],
             ];
         }));
     }
@@ -97,7 +102,14 @@ class PublicController extends Controller
 
     public function track(string $code)
     {
-        $report=Report::with(['ambulance:id,code,plate_number','driver:id,code,name'])->where('code',$code)->firstOrFail();
+        $code=strtoupper(trim($code));
+        if(!preg_match('/^(LPR|JDL|BPJ|BNC)-\d{8}-[A-Z0-9]{10}$/',$code)) {
+            return response()->json(['message'=>'Format kode laporan tidak valid.'],422);
+        }
+        $report=Report::with(['ambulance:id,code,plate_number','driver:id,code,name'])->where('code',$code)->first();
+        if(!$report) {
+            return response()->json(['message'=>'Kode laporan tidak ditemukan. Periksa kembali kode yang Anda masukkan.'],404);
+        }
         return response()->json(['report'=>[
             'code'=>$report->code,'category'=>$report->category,'type'=>$report->type,'status'=>$report->status,'created_at'=>$report->created_at,
             'scheduled_at'=>$report->scheduled_at,'service_start_at'=>$report->service_start_at,'service_end_at'=>$report->service_end_at,
@@ -107,12 +119,24 @@ class PublicController extends Controller
 
     public function bot(Request $request)
     {
-        $q=strtolower(trim((string)$request->validate(['message'=>'required|string|max:300'])['message']));
-        if (str_contains($q,'ambulans') || str_contains($q,'tersedia') || str_contains($q,'pinjam')) { $n=$this->bootstrap()->getData(true)['ambulans_tersedia']; $reply=$n>0?"Saat ini ada {$n} ambulans yang tidak sedang digunakan. Jadwal final tetap diperiksa sistem agar tidak bentrok.":'Saat ini belum ada ambulans yang bebas. Untuk keadaan gawat, hubungi layanan darurat medis setempat.'; }
+        $raw=trim((string)$request->validate(['message'=>'required|string|max:300'])['message']);
+        $q=strtolower($raw);
+        preg_match('/(?:LPR|JDL|BPJ|BNC)-\d{8}-[A-Z0-9]{10}/i',$raw,$codeMatch);
+        if(!empty($codeMatch[0])) {
+            $code=strtoupper($codeMatch[0]);
+            $report=Report::with(['ambulance:id,code','driver:id,name'])->where('code',$code)->first();
+            if(!$report) $reply="Kode {$code} tidak ditemukan. Periksa kembali kode laporan Anda.";
+            else {
+                $extra=$report->category==='ambulans' ? trim(' Ambulans: '.($report->ambulance?->code ?? 'belum ditugaskan').'. Pengemudi: '.($report->driver?->name ?? 'belum ditugaskan').'.') : '';
+                $reply="Status {$code}: ".strtoupper($report->status).'.'.$extra;
+            }
+        }
+        elseif (str_contains($q,'ambulans') || str_contains($q,'tersedia') || str_contains($q,'pinjam')) { $n=$this->bootstrap()->getData(true)['ambulans_tersedia']; $reply=$n>0?"Saat ini ada {$n} ambulans yang tidak sedang digunakan. Jadwal final tetap diperiksa sistem agar tidak bentrok.":'Saat ini belum ada ambulans yang bebas. Untuk keadaan gawat, hubungi layanan darurat medis setempat.'; }
+        elseif ($q==='cek' || str_contains($q,'cek status') || str_contains($q,'status layanan') || str_contains($q,'lacak')) $reply='Untuk memeriksa status, kirim kode laporan lengkap seperti LPR-20260813-ABC123DEFG atau gunakan menu Periksa Status Layanan.';
         elseif (str_contains($q,'bpjs')) $reply='Pengaduan BPJS dapat dicatat melalui form laporan warga yang sama. Pilih kategori Pengaduan BPJS pada form.';
         elseif (str_contains($q,'bencana')) $reply='Laporan bencana dapat dicatat melalui form laporan warga yang sama. Pilih kategori Laporan Bencana pada form.';
-        elseif (str_contains($q,'halo')||str_contains($q,'hai')) $reply='Halo. Saya SiagaBot. Anda dapat menanyakan ketersediaan ambulans dan layanan Siaga Karta.';
-        else $reply='Saya belum memahami pertanyaan itu. Coba tanyakan ketersediaan ambulans, BPJS, bencana, atau status layanan.';
+        elseif (str_contains($q,'halo')||str_contains($q,'hai')) $reply='Halo. Saya SiagaBot. Anda dapat menanyakan ketersediaan ambulans, BPJS, bencana, atau status layanan dengan kode laporan.';
+        else $reply='Saya belum memahami pertanyaan itu. Coba ketik "cek ambulans", "cek status", atau kirim kode laporan lengkap.';
         return response()->json(['reply'=>$reply]);
     }
 }

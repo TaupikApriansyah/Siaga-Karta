@@ -15,7 +15,7 @@ class SecurityHeaders
         $response->headers->set('Cross-Origin-Opener-Policy','same-origin');
         $response->headers->set('Cross-Origin-Resource-Policy','same-origin');
         if (app()->environment('production')) {
-            $response->headers->set('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: wss:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+            $response->headers->set('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob: https://upload.wikimedia.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: wss:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
             if ($request->isSecure()) $response->headers->set('Strict-Transport-Security','max-age=31536000; includeSubDomains');
         }
         return $response;

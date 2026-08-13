@@ -12,18 +12,18 @@ class RolePermissionTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_karta_can_access_finance_but_not_citizen_operations(): void
+    public function test_petugas_can_access_operations_and_finance_but_not_user_management(): void
     {
         $user = User::create([
-            'name' => 'Karta Test',
-            'username' => 'karta.test',
-            'email' => 'karta.test@example.com',
+            'name' => 'Petugas Karang Taruna Test',
+            'username' => 'petugas.test',
+            'email' => 'petugas.test@example.com',
             'password' => Hash::make('StrongPass123!'),
-            'role' => 'karta',
+            'role' => 'petugas',
             'is_active' => true,
         ]);
 
-        $plain = 'test-token-for-karta';
+        $plain = 'test-token-for-petugas';
         ApiToken::create([
             'user_id' => $user->id,
             'token_hash' => hash('sha256', $plain),
@@ -35,7 +35,7 @@ class RolePermissionTest extends TestCase
         $headers = ['Authorization' => 'Bearer '.$plain];
 
         $this->withHeaders($headers)->getJson('/api/transactions')->assertOk();
-        $this->withHeaders($headers)->getJson('/api/reports')->assertForbidden();
+        $this->withHeaders($headers)->getJson('/api/reports')->assertOk();
         $this->withHeaders($headers)->getJson('/api/users')->assertForbidden();
     }
 }

@@ -61,23 +61,23 @@ class NotificationService
                 ($code ? "{$code}: " : '').'status menjadi '.($metadata['status'] ?? 'terbaru').'.', 'pelayanan',
             ],
             'infaq.payment_submitted' => [
-                ['admin','karta'], 'finance', 'Pembayaran warga masuk',
-                ($code ? "{$code} " : '').'menunggu verifikasi Karta/Admin.', 'kas',
+                ['admin','petugas'], 'finance', 'Pembayaran warga masuk',
+                ($code ? "{$code} " : '').'menunggu verifikasi Admin atau Petugas Karang Taruna.', 'kas',
             ],
             'transaction.created' => [
-                ['admin','karta'], 'finance', 'Transaksi baru',
+                ['admin','petugas'], 'finance', 'Transaksi baru',
                 ($code ? "{$code} " : '').'menunggu verifikasi.', 'kas',
             ],
             'transaction.verified' => [
-                ['admin','karta'], 'finance', 'Transaksi terverifikasi',
-                ($code ? "{$code} " : '').'sudah masuk ke ledger terverifikasi.', 'kas',
+                ['admin','petugas'], 'finance', 'Transaksi terverifikasi',
+                ($code ? "{$code} " : '').'telah masuk ke pencatatan kas terverifikasi.', 'kas',
             ],
             'transaction.rejected' => [
-                ['admin','karta'], 'finance', 'Transaksi ditolak',
+                ['admin','petugas'], 'finance', 'Transaksi ditolak',
                 ($code ? "{$code} " : '').'ditolak dan tidak memengaruhi saldo.', 'kas',
             ],
             'infaq.settings_updated' => [
-                ['admin','karta'], 'finance', 'Pengaturan pembayaran berubah',
+                ['admin','petugas'], 'finance', 'Pengaturan pembayaran berubah',
                 'QR atau rekening pembayaran baru saja diperbarui.', 'kas',
             ],
             'ambulance.created', 'ambulance.updated' => [
@@ -85,8 +85,8 @@ class NotificationService
                 ($code ? "Unit {$code} " : 'Data unit ').'baru saja diperbarui.', 'ambulans',
             ],
             'user.created', 'user.updated' => [
-                ['admin'], 'security', 'Manajemen user berubah',
-                'Data akun atau hak akses user baru saja diperbarui.', 'users',
+                ['admin'], 'security', 'Manajemen pengguna berubah',
+                'Data akun atau hak akses pengguna baru saja diperbarui.', 'users',
             ],
             'auth.login_failed' => ($metadata['reason'] ?? null) === 'rate_limited' ? [
                 ['admin'], 'security', 'Login dibatasi',

@@ -68,3 +68,23 @@ td {
         scroll-behavior: auto !important;
     }
 }
+
+/* Form readability guard: public landing has a white text theme, so form controls must never inherit it. */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+    color: #0f172a;
+    caret-color: #0f172a;
+}
+
+select option {
+    color: #0f172a;
+    background: #ffffff;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+    color: #475569;
+    -webkit-text-fill-color: #475569;
+}

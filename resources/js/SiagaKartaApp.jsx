@@ -24,11 +24,19 @@ const mapTransactionRow = (t) => ({
   rejection_reason:t.rejection_reason,description:t.description,
 });
 
+const statusLabel = (value) => ({
+  pending:'Menunggu Verifikasi', verified:'Terverifikasi', rejected:'Ditolak',
+  menunggu:'Menunggu', diproses:'Sedang Diproses', dijemput:'Dalam Penjemputan', selesai:'Selesai', ditolak:'Ditolak',
+  tersedia:'Tersedia', dipesan:'Dipesan', bertugas:'Sedang Bertugas', maintenance:'Pemeliharaan',
+}[value] || String(value || '-').replaceAll('_',' '));
+const categoryLabel = (value) => ({ambulans:'Ambulans',bpjs:'Pengaduan BPJS',bencana:'Laporan Bencana'}[value] || value || '-');
+const serviceTypeLabel = (value) => ({darurat:'Darurat',terjadwal:'Terjadwal'}[value] || value || '-');
+
 const Button = ({ children, variant = 'primary', size = 'md', className = '', ...props }) => {
   const base = "inline-flex items-center justify-center font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100";
   const sizes = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-6 py-3.5 text-base" };
   const variants = {
-    primary: "bg-[#111] text-white hover:bg-slate-800 shadow-md",
+    primary: "bg-[#0b3b78] text-white hover:bg-[#092f61] shadow-md shadow-blue-950/10",
     danger: "bg-red-600 text-white hover:bg-red-700 shadow-md",
     success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md",
     outline: "border-2 border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50",
@@ -37,10 +45,22 @@ const Button = ({ children, variant = 'primary', size = 'md', className = '', ..
   return <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
 
-const Card = ({ children, className = '', noPadding = false }) => (
-  <div className={`bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden ${noPadding ? '' : 'p-6'} ${className}`}>
-    {children}
+const Card = ({ children, className = '', noPadding = false }) => {
+  const hasCustomBackground = /(^|\s)bg-/.test(className);
+  return <div className={`${hasCustomBackground ? '' : 'bg-white'} rounded-3xl border border-slate-100 shadow-sm overflow-hidden ${noPadding ? '' : 'p-6'} ${className}`}>{children}</div>;
+};
+
+const BrandLogo = ({ className = 'h-10 w-10', light = false }) => (
+  <div className={`relative shrink-0 overflow-hidden rounded-full ${light ? 'bg-white' : 'bg-white'} ${className}`}>
+    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-[#0b3b78]">KT</span>
+    <img src={KARANG_TARUNA_LOGO} alt="Logo Karang Taruna" className="relative z-10 h-full w-full object-contain p-1" referrerPolicy="no-referrer" onError={(event)=>{event.currentTarget.style.display='none';}}/>
   </div>
+);
+
+const DeveloperWatermark = () => (
+  <a href="https://github.com/TaupikApriansyah" target="_blank" rel="noreferrer" className="fixed bottom-2 left-1/2 z-[40] -translate-x-1/2 rounded-full border border-slate-300/60 bg-white/80 px-3 py-1 text-[9px] font-semibold tracking-wide text-slate-600 shadow-sm backdrop-blur-md transition hover:bg-white hover:text-slate-900 sm:left-auto sm:right-3 sm:translate-x-0">
+    Developer · Taupik Apriansyah · STMIK MARDIRA INDONESIA
+  </a>
 );
 
 const FieldGuide = ({ label, help, required = false, children, className = '' }) => (
@@ -115,7 +135,7 @@ const ModalForm = ({ isOpen, onClose, title, children }) => {
           <h3 className="text-xl font-black text-slate-900 tracking-tight">{title}</h3>
           <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5"/></button>
         </div>
-        <div className="p-6 overflow-y-auto flex-1 hide-scroll bg-slate-50/50">
+        <div className="p-6 overflow-y-auto flex-1 hide-scroll bg-slate-50/50 text-slate-900">
           {children}
         </div>
       </div>
@@ -163,7 +183,7 @@ const SiagaBot = ({ db }) => {
               <div>
                 <div className="font-bold">SiagaBot</div>
                 <div className="text-xs text-emerald-100 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Aktif
                 </div>
               </div>
             </div>
@@ -183,7 +203,7 @@ const SiagaBot = ({ db }) => {
             <input 
               value={input} onChange={(e)=>setInput(e.target.value)}
               placeholder="Tanya ketersediaan ambulans..." 
-              className="flex-1 px-4 py-2 bg-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-[#07132f] text-sm"
+              className="flex-1 px-4 py-2 bg-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-[#07132f] text-sm font-medium text-slate-950 caret-slate-950 placeholder:text-slate-500"
             />
             <button type="submit" className="w-10 h-10 bg-[#07132f] text-white rounded-xl flex items-center justify-center hover:bg-[#10295b] transition-colors">
               <Send className="w-4 h-4" />
@@ -197,6 +217,7 @@ const SiagaBot = ({ db }) => {
 
 const LANDING_HERO_IMAGE = '/hero-ambulance.png';
 const LANDING_COMMUNITY_IMAGE = '/siaga-karta-community.png';
+const KARANG_TARUNA_LOGO = 'https://upload.wikimedia.org/wikipedia/commons/b/b0/Logo_Karang_Taruna.png';
 
 const useLandingScroll = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -220,6 +241,8 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [trackCode, setTrackCode] = useState('');
   const [trackResult, setTrackResult] = useState(null);
+  const [trackError, setTrackError] = useState('');
+  const [trackLoading, setTrackLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [infaqInfo, setInfaqInfo] = useState({ active:false, title:'Infaq Siaga Karta', description:'', payment_instructions:'', has_qr:false, qr_url:null, bank_name:null, account_number:null, account_name:null });
   const [infaqSubmitting, setInfaqSubmitting] = useState(false);
@@ -263,6 +286,20 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
     setMobileMenuOpen(false);
   };
 
+  const normalizeTrackingCode = (value) => {
+    const upper = String(value || '').toUpperCase();
+    const match = upper.match(/(?:LPR|JDL|BPJ|BNC)-\d{8}-[A-Z0-9]{10}/);
+    return (match?.[0] || upper).replace(/\s+/g, '').slice(0, 64);
+  };
+
+  const openTrack = () => {
+    setTrackResult(null);
+    setTrackError('');
+    setTrackCode((value) => normalizeTrackingCode(value));
+    setShowTrack(true);
+    setMobileMenuOpen(false);
+  };
+
   const handleLaporSubmit = async (e) => {
     e.preventDefault();
     const formElement = e.currentTarget;
@@ -296,14 +333,29 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
   };
 
   const handleTrack = async () => {
-    if (!trackCode.trim()) return;
+    const code = normalizeTrackingCode(trackCode);
+    setTrackCode(code);
+    setTrackResult(null);
+    setTrackError('');
+    if (!code) {
+      setTrackError('Masukkan kode laporan terlebih dahulu.');
+      return;
+    }
+    if (!/^(LPR|JDL|BPJ|BNC)-\d{8}-[A-Z0-9]{10}$/.test(code)) {
+      setTrackError('Format kode belum sesuai. Gunakan kode lengkap yang diterima setelah laporan dikirim.');
+      return;
+    }
+    setTrackLoading(true);
     try {
-      const { data } = await api.get(`/public/reports/${encodeURIComponent(trackCode.trim())}`);
+      const { data } = await api.get(`/public/reports/${encodeURIComponent(code)}`);
       setTrackResult(data.report);
       addToast('Status laporan ditemukan.', 'success');
     } catch (err) {
-      setTrackResult(null);
-      addToast(errorMessage(err), 'error');
+      const msg = err?.response?.status === 404 ? 'Kode laporan tidak ditemukan. Periksa kembali kode yang Anda masukkan.' : errorMessage(err);
+      setTrackError(msg);
+      addToast(msg, 'error');
+    } finally {
+      setTrackLoading(false);
     }
   };
 
@@ -337,14 +389,15 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
     { label:'Beranda', href:'#beranda' },
     { label:'Layanan', href:'#layanan' },
     { label:'Program Sosial', href:'#program-sosial' },
-    { label:'Tentang', href:'#tentang' },
+    { label:'Profil Karang Taruna', href:'#karang-taruna' },
+    { label:'Tentang Sistem', href:'#tentang' },
   ];
 
   const serviceCards = [
     { icon: Ambulance, title:'Layanan Warga', desc:'Ajukan ambulans darurat atau sampaikan pengaduan BPJS dan bencana melalui satu alur laporan.', action:() => openReport('darurat'), actionLabel:'Buat Laporan', tone:'text-red-300 bg-red-400/10 border-red-300/20' },
-    { icon: Calendar, title:'Jadwalkan Ambulans', desc:'Ajukan penjemputan terjadwal. Sistem memeriksa slot ambulans dan driver agar jadwal tidak saling bentrok.', action:() => openReport('terjadwal'), actionLabel:'Pilih Jadwal', tone:'text-cyan-300 bg-cyan-300/10 border-cyan-300/20' },
-    { icon: Search, title:'Cek Status Layanan', desc:'Masukkan kode laporan untuk melihat perkembangan layanan, unit ambulans, dan driver yang sudah ditugaskan.', action:() => { setTrackResult(null); setShowTrack(true); }, actionLabel:'Lacak Laporan', tone:'text-blue-300 bg-blue-300/10 border-blue-300/20' },
-    { icon: HeartHandshake, title:'Infaq Warga', desc:'Bayar melalui QR atau rekening resmi Siaga Karta, lalu unggah bukti pembayaran untuk diverifikasi.', action:openInfaq, actionLabel:'Bayar Infaq', tone:'text-emerald-300 bg-emerald-300/10 border-emerald-300/20' },
+    { icon: Calendar, title:'Jadwalkan Ambulans', desc:'Ajukan penjemputan terjadwal. Sistem memeriksa ketersediaan ambulans dan pengemudi agar jadwal pelayanan tidak saling berbenturan.', action:() => openReport('terjadwal'), actionLabel:'Pilih Jadwal', tone:'text-cyan-300 bg-cyan-300/10 border-cyan-300/20' },
+    { icon: Search, title:'Periksa Status Layanan', desc:'Masukkan kode laporan untuk melihat perkembangan layanan, unit ambulans dan pengemudi yang telah ditugaskan.', action:openTrack, actionLabel:'Periksa Status', tone:'text-blue-300 bg-blue-300/10 border-blue-300/20' },
+    { icon: HeartHandshake, title:'Infaq Warga', desc:'Bayar melalui QR atau rekening resmi Siaga Karta, lalu unggah bukti pembayaran untuk diverifikasi.', action:openInfaq, actionLabel:'Dukung Program', tone:'text-emerald-300 bg-emerald-300/10 border-emerald-300/20' },
   ];
 
   return (
@@ -352,7 +405,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       <nav className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${isScrolled ? 'border-b border-white/10 bg-[#061027]/90 shadow-2xl shadow-black/20 backdrop-blur-xl' : 'bg-transparent'}`}>
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-7 lg:px-8">
           <a href="#beranda" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/30 bg-cyan-300/10 font-black text-cyan-200">SK</div>
+            <BrandLogo className="h-11 w-11" light/>
             <div>
               <div className="text-base font-black tracking-[0.08em] text-white sm:text-lg">SIAGA KARTA</div>
               <div className="hidden text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300/80 sm:block">Layanan Warga Terpadu</div>
@@ -364,8 +417,8 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <button onClick={() => setShowTrack(true)} className="rounded-full border border-white/30 px-5 py-2.5 text-sm font-semibold text-white transition hover:border-cyan-300 hover:bg-cyan-300/10">Cek Status</button>
-            <button onClick={() => setRole('login')} className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-[#07132f] transition hover:bg-cyan-50">Portal Petugas</button>
+            <button onClick={openTrack} className="rounded-full border border-white/30 px-5 py-2.5 text-sm font-semibold text-white transition hover:border-cyan-300 hover:bg-cyan-300/10">Periksa Status</button>
+            <button onClick={() => setRole('login')} className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-[#07132f] transition hover:bg-cyan-50">Portal Administrasi</button>
           </div>
 
           <button type="button" aria-label="Buka menu" className="rounded-xl border border-white/10 p-2 text-white md:hidden" onClick={() => setMobileMenuOpen(v => !v)}>{mobileMenuOpen ? <X className="h-6 w-6"/> : <Menu className="h-6 w-6"/>}</button>
@@ -375,8 +428,8 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           {mobileMenuOpen && <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} className="overflow-hidden border-t border-white/10 bg-[#061027]/95 backdrop-blur-xl md:hidden">
             <div className="space-y-1 px-5 py-5">
               {menu.map((item) => <a key={item.label} href={item.href} onClick={() => setMobileMenuOpen(false)} className="block rounded-xl px-3 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5 hover:text-white">{item.label}</a>)}
-              <button onClick={() => { setMobileMenuOpen(false); setShowTrack(true); }} className="block w-full rounded-xl px-3 py-3 text-left text-sm font-semibold text-cyan-200 hover:bg-white/5">Cek Status Laporan</button>
-              <button onClick={() => { setMobileMenuOpen(false); setRole('login'); }} className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#07132f]">Portal Petugas</button>
+              <button onClick={openTrack} className="block w-full rounded-xl px-3 py-3 text-left text-sm font-semibold text-cyan-200 hover:bg-white/5">Periksa Status Laporan</button>
+              <button onClick={() => { setMobileMenuOpen(false); setRole('login'); }} className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#07132f]">Portal Administrasi</button>
             </div>
           </motion.div>}
         </AnimatePresence>
@@ -403,7 +456,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
               <motion.div initial={{ opacity:0, y:18 }} animate={{ opacity:1, y:0 }} transition={{ duration:.65, delay:.3 }} className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <button onClick={() => openReport('darurat')} className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-7 py-3.5 text-sm font-bold text-white shadow-xl shadow-red-950/25 transition hover:-translate-y-0.5 hover:bg-red-500"><AlertCircle className="h-4 w-4"/> Butuh Ambulans Darurat</button>
                 <button onClick={() => openReport('terjadwal')} className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-7 py-3.5 text-sm font-bold text-[#07132f] transition hover:-translate-y-0.5 hover:bg-cyan-50"><Calendar className="h-4 w-4"/> Jadwalkan Ambulans</button>
-                <button onClick={() => setShowTrack(true)} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/40 bg-white/5 px-7 py-3.5 text-sm font-semibold text-white backdrop-blur transition hover:border-cyan-200/70 hover:bg-cyan-200/10"><Search className="h-4 w-4"/> Cek Status</button>
+                <button onClick={openTrack} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/40 bg-white/5 px-7 py-3.5 text-sm font-semibold text-white backdrop-blur transition hover:border-cyan-200/70 hover:bg-cyan-200/10"><Search className="h-4 w-4"/> Periksa Status</button>
               </motion.div>
             </div>
           </div>
@@ -427,14 +480,12 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
             <motion.div initial={{ opacity:0, y:28 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-100px' }} transition={{ duration:.65 }} className="max-w-2xl">
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Layanan Terintegrasi</p>
               <h2 className="mt-4 text-3xl font-light tracking-tight text-white md:text-5xl">Satu akses untuk kebutuhan warga.</h2>
-              <p className="mt-5 text-sm leading-7 text-slate-400 sm:text-base">Semua tombol di bawah terhubung langsung ke backend Laravel SIAGA KARTA.</p>
+              <p className="mt-5 text-sm leading-7 text-slate-400 sm:text-base">Seluruh layanan di bawah terhubung langsung ke sistem SIAGA KARTA dan menggunakan alur data yang sama.</p>
             </motion.div>
-            <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              {serviceCards.map((item,index) => { const Icon=item.icon; return <motion.button key={item.title} type="button" onClick={item.action} initial={{ opacity:0, y:28 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-70px' }} transition={{ duration:.55, delay:index*.08 }} className="group rounded-3xl border border-white/10 bg-white/[0.045] p-6 text-left transition hover:-translate-y-1 hover:border-cyan-300/25 hover:bg-white/[0.07]">
-                <div className={`mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border ${item.tone}`}><Icon className="h-6 w-6"/></div>
-                <h3 className="text-xl font-bold text-white">{item.title}</h3>
-                <p className="mt-4 min-h-[112px] text-sm font-light leading-7 text-slate-400">{item.desc}</p>
-                <span className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-cyan-300">{item.actionLabel}<ArrowRight className="h-4 w-4 transition group-hover:translate-x-1"/></span>
+            <div className="mt-14 grid border-y border-white/10 md:grid-cols-2">
+              {serviceCards.map((item,index) => { const Icon=item.icon; return <motion.button key={item.title} type="button" onClick={item.action} initial={{ opacity:0, y:18 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-70px' }} transition={{ duration:.45, delay:index*.06 }} className={`group flex gap-5 border-white/10 py-7 text-left transition hover:bg-white/[0.025] md:px-6 ${index%2===0?'md:border-r':''} ${index<2?'border-b':''}`}>
+                <div className={`mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${item.tone}`}><Icon className="h-5 w-5"/></div>
+                <div><h3 className="text-lg font-bold text-white">{item.title}</h3><p className="mt-2 text-sm font-light leading-7 text-slate-400">{item.desc}</p><span className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-cyan-300">{item.actionLabel}<ArrowRight className="h-4 w-4 transition group-hover:translate-x-1"/></span></div>
               </motion.button>; })}
             </div>
           </div>
@@ -453,7 +504,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
               {[
                 { n:'01', title:'Warga mengirim laporan', text:'Isi identitas, kategori, lokasi, dan kebutuhan. Sistem langsung memvalidasi data sebelum laporan diterima.', icon:Send },
                 { n:'02', title:'Petugas menerima antrean', text:'Laporan masuk ke dashboard petugas. Ambulans darurat, jadwal, BPJS, dan bencana dipisahkan berdasarkan kebutuhan proses.', icon:Activity },
-                { n:'03', title:'Layanan diproses', text:'Untuk ambulans, sistem memeriksa konflik jadwal unit dan driver. Untuk pengaduan sosial, petugas memperbarui status penanganan.', icon:Ambulance },
+                { n:'03', title:'Layanan diproses', text:'Untuk ambulans, sistem memeriksa konflik jadwal unit dan pengemudi. Untuk pengaduan sosial, petugas memperbarui status penanganan.', icon:Ambulance },
                 { n:'04', title:'Warga memantau hasil', text:'Kode laporan digunakan untuk melihat progres sampai layanan selesai. Status berubah tanpa warga harus menanyakan ulang ke petugas.', icon:CheckCircle2 },
               ].map((step,index) => { const Icon=step.icon; const left=index%2===0; return (
                 <motion.div key={step.n} initial={{ opacity:0, y:40 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-80px' }} transition={{ duration:.6, delay:index*.08 }} className={`relative mb-10 flex md:mb-14 ${left?'md:justify-start':'md:justify-end'}`}>
@@ -473,7 +524,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           <div className="mx-auto max-w-7xl px-5 sm:px-7 lg:px-8">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Program Bantuan</p><h2 className="mt-4 text-3xl font-light tracking-tight text-white md:text-5xl">Transparansi program sosial.</h2><p className="mt-5 text-sm leading-7 text-slate-400 sm:text-base">Warga dapat melihat target, dana terkumpul, dan bantuan yang telah disalurkan.</p></div>
-              <button onClick={() => { setInfaqCode(''); setShowInfaq(true); }} className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-cyan-300/30 bg-cyan-300/10 px-6 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-300/15"><QrCode className="h-4 w-4"/> Bayar Infaq</button>
+              <button onClick={() => { setInfaqCode(''); setShowInfaq(true); }} className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-cyan-300/30 bg-cyan-300/10 px-6 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-300/15"><QrCode className="h-4 w-4"/> Dukung Program</button>
             </div>
             <div className="mt-12 grid gap-6 md:grid-cols-2">
               {db.program.length ? db.program.map((p,index) => {
@@ -482,7 +533,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
                   {p.img && <div className="h-56 overflow-hidden bg-slate-900"><img src={p.img} alt={p.nama} className="h-full w-full object-cover transition duration-500 hover:scale-105"/></div>}
                   <div className="p-6"><div className="flex items-start justify-between gap-4"><h3 className="text-xl font-bold text-white">{p.nama}</h3><span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-300">AKTIF</span></div>
                     <div className="mt-6"><div className="flex justify-between gap-3 text-xs font-semibold text-slate-400"><span>Terkumpul Rp{Number(p.terkumpul).toLocaleString('id-ID')}</span><span className="text-cyan-300">{pct.toFixed(0)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-300" style={{ width:`${pct}%` }}/></div></div>
-                    <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-5"><div><div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Telah Disalurkan</div><div className="mt-1 font-bold text-white">Rp{Number(p.tersalurkan).toLocaleString('id-ID')}</div></div><button onClick={() => { setInfaqCode(''); setShowInfaq(true); }} className="rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:border-cyan-300/40 hover:text-cyan-200">Beri Infaq</button></div>
+                    <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-5"><div><div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Telah Disalurkan</div><div className="mt-1 font-bold text-white">Rp{Number(p.tersalurkan).toLocaleString('id-ID')}</div></div><button onClick={() => { setInfaqCode(''); setShowInfaq(true); }} className="rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white hover:border-cyan-300/40 hover:text-cyan-200">Dukung Program</button></div>
                   </div>
                 </motion.article>;
               }) : <div className="md:col-span-2 rounded-3xl border border-white/10 bg-white/[0.04] p-10 text-center text-slate-400">Belum ada program sosial aktif.</div>}
@@ -490,6 +541,40 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           </div>
         </section>
 
+
+        <section id="karang-taruna" className="relative overflow-hidden bg-[#f6f8fc] py-24 text-slate-900">
+          <div className="absolute right-[-8rem] top-[-8rem] h-80 w-80 rounded-full bg-blue-200/35 blur-3xl"/>
+          <div className="relative mx-auto max-w-7xl px-5 sm:px-7 lg:px-8">
+            <div className="grid gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
+              <motion.div initial={{opacity:0,y:24}} whileInView={{opacity:1,y:0}} viewport={{once:true}} transition={{duration:.55}}>
+                <BrandLogo className="h-24 w-24 shadow-lg shadow-blue-950/10"/>
+                <p className="mt-7 text-xs font-black uppercase tracking-[0.22em] text-[#0b3b78]">Profil Organisasi</p>
+                <h2 className="mt-4 text-3xl font-black tracking-tight text-[#07132f] md:text-5xl">Karang Taruna Kota Bandung</h2>
+                <p className="mt-6 text-base leading-8 text-slate-600">Karang Taruna merupakan wadah pengembangan generasi muda yang berorientasi pada tanggung jawab sosial dan kesejahteraan masyarakat. Di Kota Bandung, perannya berkembang mengikuti kebutuhan masyarakat perkotaan yang dinamis, kreatif, dan kolaboratif.</p>
+              </motion.div>
+
+              <motion.div initial={{opacity:0,y:24}} whileInView={{opacity:1,y:0}} viewport={{once:true}} transition={{duration:.55,delay:.08}} className="border-t border-slate-300 lg:border-l lg:border-t-0 lg:pl-12">
+                <p className="pt-7 text-xs font-black uppercase tracking-[0.2em] text-[#0b3b78] lg:pt-0">Asal-Usul dan Perkembangan</p>
+                <div className="mt-6 space-y-7">
+                  <div className="grid gap-2 sm:grid-cols-[8rem_1fr]"><div className="font-black text-[#07132f]">26 September 1960</div><p className="leading-7 text-slate-600">Karang Taruna lahir di Kampung Melayu, Jakarta. Awang Soma Dikarta bersama tokoh masyarakat setempat dan unsur Dinas Sosial memprakarsai wadah bagi anak yatim piatu, remaja putus sekolah, dan pemuda yang belum bekerja agar memperoleh ruang pembinaan sosial yang positif.</p></div>
+                  <div className="grid gap-2 border-t border-slate-200 pt-6 sm:grid-cols-[8rem_1fr]"><div className="font-black text-[#07132f]">Perkembangan Bandung</div><p className="leading-7 text-slate-600">Perkembangan Karang Taruna di Kota Bandung mengikuti perluasan kelembagaan Karang Taruna secara nasional hingga tingkat kecamatan, kelurahan, RW, dan RT. Karakter Bandung sebagai kota pendidikan dan kota kreatif turut membentuk pola kegiatan kepemudaan yang adaptif.</p></div>
+                  <div className="grid gap-2 border-t border-slate-200 pt-6 sm:grid-cols-[8rem_1fr]"><div className="font-black text-[#07132f]">Fokus Saat Ini</div><p className="leading-7 text-slate-600">Selain penanganan permasalahan kesejahteraan sosial, kegiatan Karang Taruna di Bandung berkembang pada pemberdayaan pemuda, ekonomi produktif dan UMKM, industri kreatif, seni budaya, serta kepedulian terhadap lingkungan.</p></div>
+                </div>
+              </motion.div>
+            </div>
+
+            <div className="mt-20 grid gap-12 border-t border-slate-300 pt-12 lg:grid-cols-2 lg:gap-20">
+              <motion.div initial={{opacity:0,y:18}} whileInView={{opacity:1,y:0}} viewport={{once:true}} transition={{duration:.5}}>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#0b3b78]">Visi Karang Taruna</p>
+                <div className="mt-6 space-y-5 text-lg leading-8 text-slate-700"><p><span className="mr-3 font-black text-[#0b3b78]">01.</span>Membangun wadah pengembangan generasi muda yang adaptif terhadap perubahan zaman.</p><p><span className="mr-3 font-black text-[#0b3b78]">02.</span>Menjadi simpul pemuda yang kuat, tangguh secara mental, dan memiliki cita-cita yang selaras dengan visi Indonesia Emas.</p></div>
+              </motion.div>
+              <motion.div initial={{opacity:0,y:18}} whileInView={{opacity:1,y:0}} viewport={{once:true}} transition={{duration:.5,delay:.08}} className="lg:border-l lg:border-slate-300 lg:pl-12">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#0b3b78]">Misi Karang Taruna</p>
+                <div className="mt-6 space-y-5 text-base leading-8 text-slate-700"><p><span className="mr-3 font-black text-[#0b3b78]">01.</span>Memperkuat soliditas kelembagaan dan jejaring kerja sama internal hingga tingkat akar rumput, termasuk RW dan RT.</p><p><span className="mr-3 font-black text-[#0b3b78]">02.</span>Berperan aktif dalam program penanganan masalah sosial, pengembangan ekonomi produktif, dan kepedulian lingkungan.</p><p><span className="mr-3 font-black text-[#0b3b78]">03.</span>Menjadi mitra strategis pemerintah daerah dalam mendukung pembangunan kesejahteraan masyarakat.</p></div>
+              </motion.div>
+            </div>
+          </div>
+        </section>
         <section id="tentang" className="relative isolate min-h-[720px] overflow-hidden bg-[#07132f] py-24">
           <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage:`url("${LANDING_COMMUNITY_IMAGE}")` }}/>
           <div className="absolute inset-0 bg-gradient-to-r from-[#061027]/98 via-[#07132f]/88 to-[#07132f]/30"/>
@@ -498,8 +583,8 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
             <motion.div initial={{ opacity:0, y:30 }} whileInView={{ opacity:1, y:0 }} viewport={{ once:true, margin:'-80px' }} transition={{ duration:.7 }} className="max-w-2xl">
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">SIAGA KARTA</p>
               <h2 className="mt-5 text-4xl font-light leading-tight tracking-tight md:text-5xl lg:text-6xl">Pelayanan warga yang <span className="block font-semibold text-cyan-100">jelas dan dapat dilacak.</span></h2>
-              <p className="mt-7 max-w-xl text-base font-light leading-8 text-slate-200/85 md:text-lg">Permintaan warga masuk ke sistem, diproses petugas, lalu dapat dipantau melalui kode laporan. Untuk layanan terjadwal, backend memeriksa konflik waktu ambulans dan driver sebelum penugasan.</p>
-              <div className="mt-10 grid max-w-xl gap-4 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur-md"><ShieldCheck className="h-6 w-6 text-cyan-300"/><p className="mt-4 font-bold text-white">Data lebih terlindungi</p><p className="mt-2 text-sm leading-6 text-slate-300/75">NIK divalidasi di backend dan data sensitif tidak dikirim kembali ke halaman publik.</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur-md"><Users className="h-6 w-6 text-cyan-300"/><p className="mt-4 font-bold text-white">Ramah untuk warga</p><p className="mt-2 text-sm leading-6 text-slate-300/75">Tampilan responsif untuk ponsel, tablet, laptop, dan desktop.</p></div></div>
+              <p className="mt-7 max-w-xl text-base font-light leading-8 text-slate-200/85 md:text-lg">Permintaan warga masuk ke sistem, diproses petugas, lalu dapat dipantau melalui kode laporan. Untuk layanan terjadwal, sistem memeriksa konflik waktu ambulans dan pengemudi sebelum penugasan.</p>
+              <div className="mt-10 grid max-w-xl border-y border-white/10 sm:grid-cols-2"><div className="py-5 sm:pr-6"><ShieldCheck className="h-6 w-6 text-cyan-300"/><p className="mt-4 font-bold text-white">Perlindungan data</p><p className="mt-2 text-sm leading-6 text-slate-300/75">Validasi identitas dilakukan oleh sistem dan data sensitif tidak ditampilkan kembali pada portal publik.</p></div><div className="border-t border-white/10 py-5 sm:border-l sm:border-t-0 sm:pl-6"><Users className="h-6 w-6 text-cyan-300"/><p className="mt-4 font-bold text-white">Akses responsif</p><p className="mt-2 text-sm leading-6 text-slate-300/75">Antarmuka dirancang untuk penggunaan pada ponsel, tablet, laptop, dan desktop.</p></div></div>
             </motion.div>
           </div>
         </section>
@@ -507,9 +592,9 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
 
       <footer className="border-t border-white/10 bg-[#030816] py-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 px-5 text-center sm:px-7 md:flex-row md:text-left lg:px-8">
-          <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 text-xs font-black text-cyan-200">SK</div><div><div className="text-sm font-bold text-white">SIAGA KARTA</div><div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Karang Taruna & Pelayanan Warga</div></div></div>
-          <p className="text-xs font-light text-slate-500">© {new Date().getFullYear()} SIAGA KARTA. Sistem layanan warga terpadu.</p>
-          <button onClick={() => setRole('login')} className="text-xs font-bold text-cyan-300 hover:text-cyan-200">Masuk Portal Petugas →</button>
+          <div className="flex items-center gap-3"><BrandLogo className="h-10 w-10" light/><div><div className="text-sm font-bold text-white">SIAGA KARTA</div><div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Karang Taruna Kota Bandung · Pelayanan Warga</div></div></div>
+          <div className="text-xs font-light text-slate-500"><p>© {new Date().getFullYear()} SIAGA KARTA. Sistem pelayanan warga terintegrasi.</p><p className="mt-1">Dikembangkan oleh <a href="https://github.com/TaupikApriansyah" target="_blank" rel="noreferrer" className="font-semibold text-cyan-300 hover:text-cyan-200">Taupik Apriansyah</a> · STMIK MARDIRA INDONESIA</p><p className="mt-1 text-[10px] text-slate-600">Logo Karang Taruna: Machiaavellis, CC BY-SA 4.0, Wikimedia Commons.</p></div>
+          <button onClick={() => setRole('login')} className="text-xs font-bold text-cyan-300 hover:text-cyan-200">Masuk Portal Administrasi →</button>
         </div>
       </footer>
 
@@ -528,7 +613,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           {reportCategory === 'ambulans' ? <>
             <div className={`flex items-start gap-3 rounded-2xl border p-4 text-sm ${formType === 'darurat' ? 'border-red-200 bg-red-50 text-red-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
               {formType === 'darurat' ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0"/> : <Clock className="mt-0.5 h-5 w-5 shrink-0"/>}
-              <p>{formType === 'darurat' ? 'Darurat dipakai untuk kebutuhan respons cepat. Pastikan nomor WhatsApp aktif dan lokasi cukup rinci.' : 'Terjadwal membutuhkan waktu jemput dan foto KTP. Sistem akan mengecek benturan jadwal ambulans dan driver.'}</p>
+              <p>{formType === 'darurat' ? 'Darurat dipakai untuk kebutuhan respons cepat. Pastikan nomor WhatsApp aktif dan lokasi cukup rinci.' : 'Terjadwal membutuhkan waktu jemput dan foto KTP. Sistem akan mengecek benturan jadwal ambulans dan pengemudi.'}</p>
             </div>
             <div className="flex gap-2 rounded-xl bg-slate-100 p-1.5"><button type="button" onClick={() => { setReportDirty(true); setFormType('darurat'); }} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='darurat'?'bg-white text-red-700 shadow-sm':'text-slate-600 hover:text-slate-900'}`}>Darurat</button><button type="button" onClick={() => { setReportDirty(true); setFormType('terjadwal'); }} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='terjadwal'?'bg-white text-blue-700 shadow-sm':'text-slate-600 hover:text-slate-900'}`}>Terjadwal</button></div>
           </> : <div className={`rounded-2xl border p-4 text-sm leading-6 ${reportCategory==='bpjs'?'border-blue-200 bg-blue-50 text-blue-900':'border-amber-200 bg-amber-50 text-amber-900'}`}>{reportCategory==='bpjs'?'Pengaduan BPJS diproses petugas tanpa penugasan ambulans. Jelaskan masalah administrasi atau layanan secara spesifik.':'Laporan bencana diproses petugas tanpa penugasan ambulans otomatis. Cantumkan lokasi, kondisi warga, dan kebutuhan mendesak.'}</div>}
@@ -552,18 +637,28 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
         </form>
       </ModalForm>
 
-      <ModalForm isOpen={showTrack} onClose={() => setShowTrack(false)} title="Cek Status Layanan">
-        <div className="space-y-5"><p className="text-sm leading-6 text-slate-600">Masukkan kode laporan yang diberikan setelah pengajuan.</p><div className="flex flex-col gap-3 sm:flex-row"><input value={trackCode} onChange={(e)=>setTrackCode(e.target.value.toUpperCase())} onKeyDown={(e)=>{if(e.key==='Enter') handleTrack();}} placeholder="LPR / JDL / BPJ / BNC - kode laporan" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-sm outline-none focus:ring-2 focus:ring-cyan-700"/><Button type="button" onClick={handleTrack}><Search className="mr-2 h-4 w-4"/>Cari</Button></div>{trackResult && <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5"><div className="grid gap-4 text-sm sm:grid-cols-2"><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</div><div className="mt-1 font-mono font-bold text-slate-900">{trackResult.code}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</div><div className="mt-1 font-bold uppercase text-cyan-900">{trackResult.status}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori</div><div className="mt-1 font-semibold uppercase text-slate-900">{trackResult.category || 'ambulans'}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</div><div className="mt-1 font-semibold text-slate-900">{trackResult.type}</div></div>{trackResult.scheduled_at && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</div><div className="mt-1 font-semibold text-slate-900">{new Date(trackResult.scheduled_at).toLocaleString('id-ID')}</div></div>}{trackResult.ambulance && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</div><div className="mt-1 font-semibold text-slate-900">{trackResult.ambulance}</div></div>}{trackResult.driver && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Driver</div><div className="mt-1 font-semibold text-slate-900">{trackResult.driver}</div></div>}</div></div>}</div>
+      <ModalForm isOpen={showTrack} onClose={() => { setShowTrack(false); setTrackError(''); }} title="Periksa Status Layanan">
+        <div className="space-y-5 text-slate-900">
+          <p className="text-sm leading-6 text-slate-600">Masukkan kode laporan yang diberikan setelah pengajuan. Fitur pemeriksaan status pada navigasi, bagian utama, dan daftar layanan menggunakan alur data yang sama.</p>
+          <FieldGuide label="Kode laporan" help="Contoh: LPR-20260813-ABC123DEFG. Kode akan dinormalisasi otomatis saat ditempel.">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input value={trackCode} onChange={(e)=>{setTrackCode(normalizeTrackingCode(e.target.value));setTrackError('');}} onKeyDown={(e)=>{if(e.key==='Enter'){e.preventDefault();handleTrack();}}} placeholder="LPR / JDL / BPJ / BNC - kode laporan" autoCapitalize="characters" spellCheck={false} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm font-semibold text-slate-950 caret-slate-950 outline-none placeholder:text-slate-500 focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/>
+              <Button type="button" disabled={trackLoading} onClick={handleTrack}><Search className="mr-2 h-4 w-4"/>{trackLoading?'Memeriksa...':'Periksa'}</Button>
+            </div>
+          </FieldGuide>
+          {trackError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{trackError}</div>}
+          {trackResult && <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5"><div className="grid gap-4 text-sm sm:grid-cols-2"><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</div><div className="mt-1 font-mono font-bold text-slate-900">{trackResult.code}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</div><div className="mt-1 font-bold uppercase text-cyan-900">{statusLabel(trackResult.status)}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori</div><div className="mt-1 font-semibold uppercase text-slate-900">{categoryLabel(trackResult.category)}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</div><div className="mt-1 font-semibold text-slate-900">{serviceTypeLabel(trackResult.type)}</div></div>{trackResult.scheduled_at && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</div><div className="mt-1 font-semibold text-slate-900">{new Date(trackResult.scheduled_at).toLocaleString('id-ID')}</div></div>}{trackResult.ambulance && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</div><div className="mt-1 font-semibold text-slate-900">{trackResult.ambulance}</div></div>}{trackResult.driver && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Pengemudi</div><div className="mt-1 font-semibold text-slate-900">{trackResult.driver}</div></div>}</div></div>}
+        </div>
       </ModalForm>
 
       <ModalForm isOpen={showSuccess} onClose={() => setShowSuccess(false)} title="Laporan Berhasil Dikirim">
-        <div className="py-4 text-center"><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-10 w-10"/></div><h3 className="mt-5 text-2xl font-black text-slate-900">Simpan kode laporan Anda</h3><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">Gunakan kode ini untuk memantau status pelayanan. Jangan membagikannya kepada pihak yang tidak berkepentingan.</p><div className="mx-auto mt-6 max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5 font-mono text-lg font-black tracking-wider text-slate-900 sm:text-2xl">{trackCode}</div><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => setShowSuccess(false)}>Tutup</Button><Button onClick={() => { setShowSuccess(false); setTrackResult(null); setShowTrack(true); }}>Cek Status Sekarang</Button></div></div>
+        <div className="py-4 text-center"><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-10 w-10"/></div><h3 className="mt-5 text-2xl font-black text-slate-900">Simpan kode laporan Anda</h3><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">Gunakan kode ini untuk memantau status pelayanan. Jangan membagikannya kepada pihak yang tidak berkepentingan.</p><div className="mx-auto mt-6 max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5 font-mono text-lg font-black tracking-wider text-slate-900 sm:text-2xl">{trackCode}</div><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => setShowSuccess(false)}>Tutup</Button><Button onClick={() => { setShowSuccess(false); openTrack(); }}>Periksa Status Sekarang</Button></div></div>
       </ModalForm>
 
       <ModalForm isOpen={showInfaq} onClose={() => { setShowInfaq(false); setInfaqCode(''); setInfaqError(''); }} title={infaqInfo.title || 'Infaq Siaga Karta'}>
         {!infaqInfo.active ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-800">Pembayaran infaq belum diaktifkan oleh pengelola.</div> : <div className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">{infaqInfo.has_qr ? <img src={infaqInfo.qr_url} alt="QR pembayaran infaq SIAGA KARTA" className="mx-auto aspect-square w-full max-w-[280px] rounded-xl object-contain"/> : <div className="flex aspect-square items-center justify-center text-slate-400"><QrCode className="h-20 w-20"/></div>}<p className="mt-3 text-xs text-slate-500">Gunakan QR atau rekening resmi yang tersedia.</p></div><div>{infaqInfo.bank_name && infaqInfo.account_number && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="text-xs font-black uppercase tracking-wider text-emerald-700">Transfer Bank</div><div className="mt-2 font-bold text-slate-950">{infaqInfo.bank_name}</div><div className="mt-1 flex items-center gap-2"><code className="rounded bg-white px-2 py-1 text-sm font-black text-slate-950">{infaqInfo.account_number}</code><button type="button" onClick={()=>navigator.clipboard?.writeText(infaqInfo.account_number).then(()=>addToast('Nomor rekening disalin.','success')).catch(()=>{})} className="text-xs font-bold text-emerald-700">Salin</button></div><div className="mt-1 text-xs text-slate-600">a.n. {infaqInfo.account_name}</div></div>}<p className="text-sm leading-7 text-slate-600">{infaqInfo.description}</p>{infaqInfo.payment_instructions && <div className="mt-4 whitespace-pre-line rounded-xl bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">{infaqInfo.payment_instructions}</div>}</div></div>
-          {infaqCode ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600"/><div className="mt-2 font-bold text-emerald-900">Bukti pembayaran diterima</div><div className="mt-2 font-mono text-sm text-emerald-900">{infaqCode}</div><div className="mt-2 text-xs text-emerald-700">Pembayaran akan masuk ke kas setelah diverifikasi Admin/Karta.</div></div> : <form onSubmit={handleInfaqSubmit} className="space-y-5">
+          <div className="grid gap-6 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">{infaqInfo.has_qr ? <img src={infaqInfo.qr_url} alt="QR pembayaran infaq SIAGA KARTA" className="mx-auto aspect-square w-full max-w-[280px] rounded-xl object-contain"/> : <div className="flex aspect-square items-center justify-center text-slate-400"><QrCode className="h-20 w-20"/></div>}<p className="mt-3 text-xs text-slate-500">Gunakan QR atau rekening resmi yang tersedia.</p></div><div>{infaqInfo.bank_name && infaqInfo.account_number && <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Transfer Bank</div><div className="mt-2 font-bold text-slate-950">{infaqInfo.bank_name}</div><div className="mt-1 flex items-center gap-2"><code className="rounded bg-white px-2 py-1 text-sm font-black text-slate-950">{infaqInfo.account_number}</code><button type="button" onClick={()=>navigator.clipboard?.writeText(infaqInfo.account_number).then(()=>addToast('Nomor rekening disalin.','success')).catch(()=>{})} className="text-xs font-bold text-blue-700">Salin</button></div><div className="mt-1 text-xs text-slate-600">a.n. {infaqInfo.account_name}</div></div>}<p className="text-sm leading-7 text-slate-600">{infaqInfo.description}</p>{infaqInfo.payment_instructions && <div className="mt-4 whitespace-pre-line rounded-xl bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">{infaqInfo.payment_instructions}</div>}</div></div>
+          {infaqCode ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600"/><div className="mt-2 font-bold text-emerald-900">Bukti pembayaran diterima</div><div className="mt-2 font-mono text-sm text-emerald-900">{infaqCode}</div><div className="mt-2 text-xs text-emerald-700">Pembayaran akan tercatat pada kas setelah diverifikasi Admin atau Petugas Karang Taruna.</div></div> : <form onSubmit={handleInfaqSubmit} className="space-y-5">
             <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true"/>
             {infaqError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{infaqError}</div>}
             <div className="grid gap-5 sm:grid-cols-2">
@@ -584,31 +679,34 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
 };
 
 
-const Login = ({ setRole, addToast, onLogin }) => {
+const Login = ({ setRole, addToast, onLogin, demo }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loginValue,setLoginValue]=useState('');
+  const [passwordValue,setPasswordValue]=useState('');
   const handleLogin = async (e) => {
     e.preventDefault(); setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', { login: e.currentTarget.login.value, password: e.currentTarget.password.value });
+      const { data } = await api.post('/auth/login', { login: loginValue, password: passwordValue });
       setToken(data.token,{expires_at:data.expires_at,absolute_expires_at:data.absolute_expires_at}); onLogin(data.user); setRole(data.user.role); addToast('Login berhasil.', 'success');
     } catch (err) { addToast(errorMessage(err), 'error'); } finally { setLoading(false); }
   };
   return (
   <div className="min-h-[100dvh] flex bg-[#FBFBFA] font-sans">
-    <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-[#022b20]">
+    <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-[#07132f]">
       <img src="/hero-ambulance.png" className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-60" alt="Building" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#022b20] via-transparent to-transparent"></div>
-      <div className="absolute top-8 left-12 flex items-center gap-3"><div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-[#022b20] shadow-lg"><ShieldAlert className="w-5 h-5" /></div><span className="text-white font-bold text-xl tracking-tight">SIAGA KARTA</span></div>
-      <div className="absolute bottom-16 left-12 right-12"><h1 className="text-5xl font-black text-white mb-6 leading-[1.1] tracking-tight">Kelola Pelayanan <br/>Kelurahan Terpadu.</h1><p className="text-white/80 text-lg max-w-md font-medium leading-relaxed">Sistem administrasi terpadu Karang Taruna untuk respon ambulans dan laporan warga yang cepat.</p></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-[#07132f] via-[#07132f]/30 to-transparent"></div>
+      <div className="absolute top-8 left-12 flex items-center gap-3"><BrandLogo className="h-11 w-11" light/><span className="text-white font-bold text-xl tracking-tight">SIAGA KARTA</span></div>
+      <div className="absolute bottom-16 left-12 right-12"><h1 className="text-5xl font-black text-white mb-6 leading-[1.1] tracking-tight">Kelola Pelayanan <br/>Warga Secara Terpadu.</h1><p className="text-white/80 text-lg max-w-md font-medium leading-relaxed">Sistem administrasi Karang Taruna untuk pengelolaan pelayanan warga, ambulans, kas, dan tindak lanjut laporan secara terintegrasi.</p></div>
     </div>
     <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 relative bg-white">
       <div className="absolute top-6 right-6"><button onClick={() => setRole('warga')} className="px-5 py-2.5 bg-slate-50 text-slate-600 text-sm font-bold rounded-full border border-slate-200">Kembali ke Portal Warga</button></div>
-      <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Petugas</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun resmi sistem.</p>
+      <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Administrasi SIAGA KARTA</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun Admin atau Petugas Karang Taruna yang telah terdaftar.</p>
         <form className="space-y-5" onSubmit={handleLogin}>
-          <FieldGuide label="Email atau Username" help="Gunakan akun resmi Admin, Petugas, atau Karta yang sudah terdaftar." required><input name="login" required autoComplete="username" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#022b20]/20 outline-none text-sm text-slate-900" /></FieldGuide>
-          <FieldGuide label="Password" help="Masukkan password akun Anda. Tombol mata hanya mengubah tampilan, bukan menyimpan password." required><div className="relative"><input name="password" required minLength={8} type={showPassword?'text':'password'} autoComplete="current-password" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#022b20]/20 outline-none text-sm text-slate-900" /><button type="button" aria-label={showPassword?'Sembunyikan password':'Tampilkan password'} onClick={()=>setShowPassword(v=>!v)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500"><Eye className="w-5 h-5"/></button></div></FieldGuide>
-          <button disabled={loading} type="submit" className="w-full py-4 bg-[#022b20] text-white rounded-xl font-bold disabled:opacity-50">{loading?'Memverifikasi...':'Masuk ke Dashboard'}</button>
+          {demo?.enabled && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-slate-900"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Akun Demo</div><p className="mt-1 text-xs leading-5 text-slate-600">Akun demo yang sama berlaku pada localhost maupun Cloudflare. Pilih akun demo untuk mengisi formulir masuk secara otomatis.</p><div className="mt-3 grid grid-cols-2 gap-2">{(demo.usernames||['admin','petugas']).map(username=><button key={username} type="button" onClick={()=>{setLoginValue(username);setPasswordValue(demo.password||'');}} className="rounded-xl border border-blue-200 bg-white px-2 py-2 text-xs font-black capitalize text-blue-800 hover:bg-blue-100">{username}</button>)}</div></div>}
+          <FieldGuide label="Email atau Nama Pengguna" help="Gunakan akun resmi Admin atau Petugas Karang Taruna yang telah terdaftar." required><input name="login" required autoComplete="username" value={loginValue} onChange={e=>setLoginValue(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /></FieldGuide>
+          <FieldGuide label="Kata Sandi" help={demo?.enabled?'Kata sandi demo otomatis terisi setelah memilih akun.':'Masukkan kata sandi akun Anda. Tombol mata hanya mengubah tampilan dan tidak menyimpan kata sandi.'} required><div className="relative"><input name="password" required minLength={8} value={passwordValue} onChange={e=>setPasswordValue(e.target.value)} type={showPassword?'text':'password'} autoComplete="current-password" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /><button type="button" aria-label={showPassword?'Sembunyikan kata sandi':'Tampilkan kata sandi'} onClick={()=>setShowPassword(v=>!v)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500"><Eye className="w-5 h-5"/></button></div></FieldGuide>
+          <button disabled={loading} type="submit" className="w-full py-4 bg-[#0b3b78] hover:bg-[#092f61] text-white rounded-xl font-bold disabled:opacity-50">{loading?'Memverifikasi...':'Masuk ke Dashboard'}</button>
         </form>
       </div>
     </div>
@@ -665,11 +763,9 @@ const NotificationBell = ({ addToast }) => {
 };
 
 const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard, setRole, addToast, requestConfirm }) => {
-  const allowedMenus = role==='karta'
-    ? ['dashboard','kas','laporan']
-    : role==='admin'
-      ? ['dashboard','pelayanan','ambulans','kas','laporan','users']
-      : ['dashboard','pelayanan','ambulans','laporan'];
+  const allowedMenus = role==='admin'
+    ? ['dashboard','pelayanan','ambulans','kas','laporan','users']
+    : ['dashboard','pelayanan','ambulans','kas','laporan'];
   const [activeMenu, setActiveMenu] = useState(() => {
     const saved=sessionStorage.getItem(`siagakarta_menu_${role}`) || 'dashboard';
     return allowedMenus.includes(saved)?saved:'dashboard';
@@ -682,8 +778,8 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
     pelayanan:{ id:'pelayanan',label:'Pelayanan Warga',icon:Activity },
     ambulans:{ id:'ambulans',label:'Ambulans',icon:Truck },
     kas:{ id:'kas',label:'Kas & Pembayaran',icon:ReceiptText },
-    laporan:{ id:'laporan',label:'Download Laporan',icon:Download },
-    users:{ id:'users',label:'Manajemen User',icon:Users },
+    laporan:{ id:'laporan',label:'Unduh Laporan',icon:Download },
+    users:{ id:'users',label:'Manajemen Pengguna',icon:Users },
   };
   const sidebarNavs=allowedMenus.map(id=>navMap[id]);
 
@@ -716,63 +812,63 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
   const logout=()=>requestConfirm('Logout','Yakin ingin keluar dari sistem?','Logout','Batal',async()=>{
     try{await api.post('/auth/logout');}catch{}finally{setToken(null);setRole('warga');addToast('Berhasil logout','info');}
   });
-  const roleLabel=role==='admin'?'Admin':role==='karta'?'Karta':'Petugas';
+  const roleLabel=role==='admin'?'Admin':'Petugas Karang Taruna';
   const sidebarContent = (mobile=false) => <>
     <div className="flex items-center justify-between px-5 mb-8">
       <div className={`flex items-center gap-3 overflow-hidden whitespace-nowrap ${!mobile && desktopCompact ? 'lg:w-0 lg:opacity-0' : ''}`}>
-        <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-white"><ShieldAlert className="w-6 h-6"/></div>
+        <BrandLogo className="h-11 w-11" light/>
         <span className="font-black text-white">SIAGA KARTA</span>
       </div>
       {mobile ? <button onClick={()=>setMobileOpen(false)} className="p-2 text-white/80"><X className="w-5 h-5"/></button> : <button onClick={()=>setDesktopCompact(v=>!v)} className="hidden lg:flex w-8 h-8 items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white"><ChevronRight className={`w-4 h-4 ${desktopCompact?'':'rotate-180'}`}/></button>}
     </div>
     <nav className="flex-1 flex flex-col px-3 gap-2">
-      {sidebarNavs.map(nav => <button key={nav.id} onClick={()=>chooseMenu(nav.id)} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all ${activeMenu===nav.id?'bg-[#FBFBFA] text-[#022b20]':'text-white/70 hover:text-white hover:bg-white/5'}`} title={!mobile&&desktopCompact?nav.label:''}>
+      {sidebarNavs.map(nav => <button key={nav.id} onClick={()=>chooseMenu(nav.id)} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all ${activeMenu===nav.id?'bg-white text-[#0b3b78] shadow-lg shadow-black/10':'text-white/70 hover:text-white hover:bg-white/5'}`} title={!mobile&&desktopCompact?nav.label:''}>
         <nav.icon className="w-5 h-5 shrink-0"/>{(mobile || !desktopCompact) && <span className="font-bold text-sm whitespace-nowrap">{nav.label}</span>}
       </button>)}
     </nav>
-    <div className="p-3 mt-auto"><button onClick={logout} className="flex items-center gap-4 px-4 py-3.5 text-white/70 hover:text-white w-full rounded-xl hover:bg-white/5"><LogOut className="w-5 h-5 shrink-0"/>{(mobile || !desktopCompact) && <span className="font-bold text-sm">Logout Sistem</span>}</button></div>
+    <div className="p-3 mt-auto"><button onClick={logout} className="flex items-center gap-4 px-4 py-3.5 text-white/70 hover:text-white w-full rounded-xl hover:bg-white/5"><LogOut className="w-5 h-5 shrink-0"/>{(mobile || !desktopCompact) && <span className="font-bold text-sm">Keluar dari Sistem</span>}</button></div>
   </>;
 
-  return <div className="min-h-[100dvh] bg-[#011a13] lg:flex font-sans overflow-hidden">
+  return <div className="min-h-[100dvh] bg-[#050b1c] lg:flex font-sans overflow-hidden">
     {mobileOpen && <button aria-label="Tutup menu" className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={()=>setMobileOpen(false)}/>} 
-    <aside className={`fixed inset-y-0 left-0 z-50 w-72 py-6 flex flex-col bg-[#011a13] transition-transform lg:hidden ${mobileOpen?'translate-x-0':'-translate-x-full'}`}>{sidebarContent(true)}</aside>
-    <aside className={`hidden lg:flex ${desktopCompact?'w-20':'w-64'} py-8 flex-col shrink-0 transition-all duration-300`}>{sidebarContent(false)}</aside>
-    <main className="min-w-0 flex-1 flex flex-col h-[100dvh] overflow-hidden bg-[#FBFBFA] lg:rounded-l-3xl lg:shadow-[-10px_0_30px_rgba(0,0,0,0.2)]">
-      <header className="min-h-16 sm:min-h-20 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 border-b border-slate-100 bg-white/80 backdrop-blur-sm shrink-0">
+    <aside className={`fixed inset-y-0 left-0 z-50 w-72 py-6 flex flex-col bg-[#07132f] transition-transform lg:hidden ${mobileOpen?'translate-x-0':'-translate-x-full'}`}>{sidebarContent(true)}</aside>
+    <aside className={`hidden lg:flex ${desktopCompact?'w-20':'w-64'} py-8 flex-col shrink-0 bg-gradient-to-b from-[#07132f] via-[#081a3d] to-[#050b1c] transition-all duration-300`}>{sidebarContent(false)}</aside>
+    <main className="min-w-0 flex-1 flex flex-col h-[100dvh] overflow-hidden bg-[#f5f8ff] lg:rounded-l-3xl lg:shadow-[-10px_0_30px_rgba(0,0,0,0.2)]">
+      <header className="min-h-16 sm:min-h-20 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 border-b border-blue-100 bg-white/90 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{navMap[activeMenu]?.label || 'Beranda'}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">Portal {roleLabel} · sinkronisasi aktif</p></div></div>
-        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-emerald-100 text-[#022b20] flex items-center justify-center font-black border border-emerald-200 shrink-0">{role==='admin'?'AD':role==='karta'?'KR':'PT'}</div></div>
+        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-blue-100 text-[#0b3b78] flex items-center justify-center font-black border border-blue-200 shrink-0">{role==='admin'?'AD':'KT'}</div></div>
       </header>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 hide-scroll"><DashboardErrorBoundary resetKey={activeMenu}><div key={activeMenu} className="min-h-full">{renderContent()}</div></DashboardErrorBoundary></div>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 hide-scroll"><DashboardErrorBoundary resetKey={activeMenu}><motion.div key={activeMenu} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{duration:.22,ease:'easeOut'}} className="min-h-full">{renderContent()}</motion.div></DashboardErrorBoundary></div>
     </main>
   </div>;
 };
 
 const ViewDashboard = ({ db, role, stats }) => {
-  const canFinance=role==='admin'||role==='karta';
+  const canFinance=role==='admin'||role==='petugas';
   const canOperations=role==='admin'||role==='petugas';
-  const liveChart=stats?.daily?.length ? stats.daily : chartData;
+  const liveChart=stats?.daily?.length ? stats.daily : emptyChartData;
   const pendingFinance=db.transaksi.filter(t=>t.status==='pending').length;
   const actionLabel=(action='')=>action.replaceAll('.',' · ').replaceAll('_',' ');
   return (
-    <div className="animate-in fade-in flex flex-col h-full gap-6 max-w-7xl">
+    <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{duration:.28}} className="flex flex-col h-full gap-6 max-w-7xl">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {canFinance&&<Card className="col-span-1 md:col-span-2 bg-[#022b20] text-white border-none shadow-xl shadow-emerald-900/10">
-          <h3 className="text-emerald-100 text-sm font-bold mb-1 uppercase tracking-widest">Saldo Kas Terverifikasi</h3>
-          <div className="text-4xl font-black mb-4 tracking-tight">Rp {Number(stats?.saldo||0).toLocaleString('id-ID')}</div>
-          <div className="flex gap-6"><div><div className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-1">Masuk Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pemasukan_bulan||0).toLocaleString('id-ID')}</div></div><div><div className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">Keluar Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pengeluaran_bulan||0).toLocaleString('id-ID')}</div></div></div>
+        {canFinance&&<Card className="col-span-1 md:col-span-2 bg-gradient-to-br from-[#0b3b78] via-[#092f61] to-[#07132f] text-white border-none shadow-xl shadow-blue-950/15 transition-transform duration-200 hover:-translate-y-0.5">
+          <h3 className="text-cyan-100 text-sm font-bold mb-1 uppercase tracking-widest">Saldo Kas Terverifikasi</h3>
+          <div className="text-4xl font-black mb-4 tracking-tight text-white">Rp {Number(stats?.saldo||0).toLocaleString('id-ID')}</div>
+          <div className="flex gap-6"><div><div className="text-xs text-cyan-200 font-bold uppercase tracking-wider mb-1">Masuk Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pemasukan_bulan||0).toLocaleString('id-ID')}</div></div><div><div className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">Keluar Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pengeluaran_bulan||0).toLocaleString('id-ID')}</div></div></div>
         </Card>}
-        {canOperations&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4"><Activity className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.laporan_aktif ?? 0}</div><div className="text-sm font-bold text-slate-500">Laporan Aktif</div></Card>}
-        {canOperations&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-4"><Truck className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.ambulans_tersedia ?? 0}</div><div className="text-sm font-bold text-slate-500">Ambulans Tersedia</div></Card>}
-        {role==='karta'&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mb-4"><Clock className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{pendingFinance}</div><div className="text-sm font-bold text-slate-500">Transaksi Pending</div></Card>}
-        {role==='karta'&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><ReceiptText className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{db.transaksi.length}</div><div className="text-sm font-bold text-slate-500">Transaksi Terbaru</div></Card>}
+        {canOperations&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4"><Activity className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.laporan_aktif ?? 0}</div><div className="text-sm font-bold text-slate-500">Laporan Aktif</div></Card>}
+        {canOperations&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><Truck className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.ambulans_tersedia ?? 0}</div><div className="text-sm font-bold text-slate-500">Ambulans Tersedia</div></Card>}
+        {canFinance&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mb-4"><Clock className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{pendingFinance}</div><div className="text-sm font-bold text-slate-500">Menunggu Verifikasi</div></Card>}
+        {canFinance&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><ReceiptText className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{db.transaksi.length}</div><div className="text-sm font-bold text-slate-500">Transaksi Terkini</div></Card>}
       </div>
 
       <div className={`grid grid-cols-1 ${canOperations?'lg:grid-cols-3':'lg:grid-cols-2'} gap-6 flex-1 min-h-[350px]`}>
-        {canOperations&&<Card className="lg:col-span-2 flex flex-col"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-900">Volume Laporan 7 Hari</h3><span className="text-xs font-bold text-emerald-700">LIVE SYNC</span></div><div className="flex-1 w-full h-full min-h-[250px]"><ResponsiveContainer width="100%" height="100%"><AreaChart data={liveChart} margin={{ top:10,right:10,left:-20,bottom:0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><YAxis axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><RechartsTooltip contentStyle={{borderRadius:'16px',border:'none'}}/><Area type="monotone" name="Ambulans" dataKey="darurat" stroke="#ef4444" strokeWidth={3} fillOpacity={0.08} fill="#ef4444"/><Area type="monotone" name="BPJS/Bencana" dataKey="sosial" stroke="#022b20" strokeWidth={3} fillOpacity={0.08} fill="#022b20"/></AreaChart></ResponsiveContainer></div></Card>}
-        {canFinance&&role==='karta'&&<Card><h3 className="font-bold text-slate-900 mb-4">Ringkasan Karta</h3><p className="text-sm leading-6 text-slate-600">Saldo hanya berasal dari transaksi berstatus verified. Pengeluaran tidak dapat diverifikasi jika melebihi saldo. QR dan rekening pembayaran memakai pengaturan yang sama dengan landing page warga.</p></Card>}
+        {canOperations&&<Card className="lg:col-span-2 flex flex-col"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-900">Volume Laporan 7 Hari</h3><span className="text-xs font-bold text-blue-700">SINKRONISASI AKTIF</span></div><div className="flex-1 w-full h-full min-h-[250px]"><ResponsiveContainer width="100%" height="100%"><AreaChart data={liveChart} margin={{ top:10,right:10,left:-20,bottom:0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><YAxis axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><RechartsTooltip contentStyle={{borderRadius:'16px',border:'none'}}/><Area type="monotone" name="Ambulans" dataKey="darurat" stroke="#ef4444" strokeWidth={3} fillOpacity={0.08} fill="#ef4444"/><Area type="monotone" name="BPJS/Bencana" dataKey="sosial" stroke="#0b3b78" strokeWidth={3} fillOpacity={0.08} fill="#0b3b78"/></AreaChart></ResponsiveContainer></div></Card>}
+        {canFinance&&<Card><h3 className="font-bold text-slate-900 mb-4">Ringkasan Keuangan</h3><p className="text-sm leading-6 text-slate-600">Saldo dihitung dari transaksi yang telah terverifikasi. Pengeluaran tidak dapat diverifikasi apabila melebihi saldo yang tersedia. QR dan rekening pembayaran menggunakan pengaturan yang sama dengan portal warga.</p></Card>}
         <Card className="flex flex-col bg-slate-50/50 border-none"><div className="flex items-center justify-between mb-6"><h3 className="font-bold text-slate-900">Aktivitas Terkini</h3><span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Audit</span></div><div className="flex-1 overflow-y-auto pr-2 space-y-5">{(stats?.activity||[]).length ? stats.activity.map(item=><div key={item.id} className="flex gap-3"><div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0"/><div><p className="text-sm font-semibold text-slate-800 capitalize">{actionLabel(item.action)}</p><p className="mt-1 text-xs text-slate-400">{item.actor||'Sistem'} • {new Date(item.created_at).toLocaleString('id-ID')}</p></div></div>) : <p className="text-sm text-slate-500">Belum ada aktivitas tercatat.</p>}</div></Card>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -868,23 +964,23 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
             <p>Form ini untuk laporan yang diterima petugas secara langsung, WhatsApp, atau telepon. Isi data berdasarkan informasi warga dan pastikan nomor kontak dapat dikonfirmasi.</p>
           </div>
           <FieldGuide label="Sumber informasi" help="Pilih kanal pertama kali warga menyampaikan laporan." required>
-            <select name="source" required className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm font-medium text-slate-900"><option value="datang_langsung">Datang langsung ke posko</option><option value="whatsapp">WhatsApp</option><option value="telepon">Telepon</option></select>
+            <select name="source" required className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm font-medium text-slate-900"><option value="datang_langsung">Datang langsung ke posko</option><option value="whatsapp">WhatsApp</option><option value="telepon">Telepon</option></select>
           </FieldGuide>
           <FieldGuide label="Kategori laporan" help="Kategori menentukan alur tindak lanjut dan apakah sistem perlu menugaskan ambulans." required>
-            <select value={inputCategory} onChange={(e)=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm font-medium text-slate-900"><option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option></select>
+            <select value={inputCategory} onChange={(e)=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm font-medium text-slate-900"><option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option></select>
           </FieldGuide>
           {inputCategory==='ambulans' && <div><p className="mb-2 text-sm font-bold text-slate-800">Jenis layanan ambulans</p><p className="mb-3 text-xs leading-5 text-slate-500">Darurat untuk kebutuhan cepat. Terjadwal membutuhkan waktu jemput dan durasi layanan.</p><div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl"><button type="button" onClick={() => setInputType('darurat')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'darurat' ? 'bg-white shadow-sm text-red-700' : 'text-slate-600 hover:text-slate-900'}`}>Darurat</button><button type="button" onClick={() => setInputType('terjadwal')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'terjadwal' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}>Terjadwal</button></div></div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <FieldGuide label="Nama pelapor" help="Nama warga yang menyampaikan laporan." required><input name="name" required minLength={3} placeholder="Nama lengkap" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm text-slate-900" /></FieldGuide>
-            <FieldGuide label="No. kontak" help="Nomor Indonesia aktif untuk konfirmasi petugas." required><input name="phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm text-slate-900" /></FieldGuide>
-            <FieldGuide label="NIK 16 digit" help="Dipakai untuk identifikasi warga. Masukkan tepat 16 angka." required className="md:col-span-2"><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 font-mono text-sm text-slate-900" placeholder="16 digit angka" /></FieldGuide>
+            <FieldGuide label="Nama pelapor" help="Nama warga yang menyampaikan laporan." required><input name="name" required minLength={3} placeholder="Nama lengkap" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm text-slate-900" /></FieldGuide>
+            <FieldGuide label="No. kontak" help="Nomor Indonesia aktif untuk konfirmasi petugas." required><input name="phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm text-slate-900" /></FieldGuide>
+            <FieldGuide label="NIK 16 digit" help="Dipakai untuk identifikasi warga. Masukkan tepat 16 angka." required className="md:col-span-2"><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 font-mono text-sm text-slate-900" placeholder="16 digit angka" /></FieldGuide>
           </div>
           {inputCategory==='ambulans' && inputType === 'terjadwal' && <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 animate-in fade-in">
-            <FieldGuide label="Jadwal jemput" help="Pilih waktu di masa mendatang. Sistem akan memeriksa konflik jadwal." required><input name="scheduled_at" required type="datetime-local" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 text-sm text-slate-900" /></FieldGuide>
+            <FieldGuide label="Jadwal jemput" help="Pilih waktu di masa mendatang. Sistem akan memeriksa konflik jadwal." required><input name="scheduled_at" required type="datetime-local" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm text-slate-900" /></FieldGuide>
             <FieldGuide label="Estimasi durasi" help="Perkiraan lama ambulans digunakan pada layanan ini." required><select name="service_duration_minutes" defaultValue="120" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></FieldGuide>
           </div>}
-          <FieldGuide label="Lokasi / alamat terkait" help="Tulis alamat lengkap beserta RT/RW atau patokan agar petugas mudah menemukan lokasi." required><textarea name="pickup_location" required minLength={5} rows={3} placeholder="Alamat lengkap dan patokan" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 resize-none text-sm text-slate-900" /></FieldGuide>
-          <FieldGuide label="Keterangan / isi laporan" help="Jelaskan kondisi, kebutuhan, atau masalah utama secara ringkas tetapi spesifik." required><textarea name="medical_condition" required minLength={3} rows={3} placeholder="Kondisi atau kebutuhan warga" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#022b20]/20 resize-none text-sm text-slate-900" /></FieldGuide>
+          <FieldGuide label="Lokasi / alamat terkait" help="Tulis alamat lengkap beserta RT/RW atau patokan agar petugas mudah menemukan lokasi." required><textarea name="pickup_location" required minLength={5} rows={3} placeholder="Alamat lengkap dan patokan" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 resize-none text-sm text-slate-900" /></FieldGuide>
+          <FieldGuide label="Keterangan / isi laporan" help="Jelaskan kondisi, kebutuhan, atau masalah utama secara ringkas tetapi spesifik." required><textarea name="medical_condition" required minLength={3} rows={3} placeholder="Kondisi atau kebutuhan warga" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 resize-none text-sm text-slate-900" /></FieldGuide>
           <div className="pt-6 flex gap-3 justify-end border-t border-slate-100"><Button type="button" variant="ghost" disabled={manualSubmitting} onClick={closeManual}>Batal</Button><Button type="submit" disabled={manualSubmitting} variant="primary">{manualSubmitting?'Menyimpan...':'Simpan ke Sistem'}</Button></div>
         </form>
       </ModalForm>
@@ -892,7 +988,7 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
       <ModalForm isOpen={Boolean(detail)} onClose={closeDetail} title="Detail Pelayanan Warga">
         {detailLoading ? <div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail laporan...</div> : detail && <div className="grid gap-5 sm:grid-cols-2 text-sm">
           <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-black text-slate-950">{detail.code}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-black uppercase text-slate-950">{detail.status}</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-black uppercase text-slate-950">{statusLabel(detail.status)}</p></div>
           <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nama warga</p><p className="mt-1 text-slate-900">{detail.name}</p></div>
           <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kontak</p><p className="mt-1 text-slate-900">{detail.phone}</p></div>
           <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">NIK</p><p className="mt-1 font-mono text-slate-900">{detail.nik_masked}</p></div>
@@ -901,8 +997,8 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
           <div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kondisi / laporan</p><p className="mt-1 whitespace-pre-line leading-6 text-slate-900">{detail.medical_condition}</p></div>
           {detail.scheduled_at&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</p><p className="mt-1 text-slate-900">{new Date(detail.scheduled_at).toLocaleString('id-ID')}</p></div>}
           {detail.ambulance&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</p><p className="mt-1 font-bold text-slate-900">{detail.ambulance.code}</p></div>}
-          {detail.driver&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Driver</p><p className="mt-1 font-bold text-slate-900">{detail.driver.name}</p></div>}
-          {detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-800"><span>{h.from_status||'awal'}</span><span>→</span><span className="uppercase text-emerald-700">{h.to_status}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}
+          {detail.driver&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Pengemudi</p><p className="mt-1 font-bold text-slate-900">{detail.driver.name}</p></div>}
+          {detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-800"><span>{h.from_status?statusLabel(h.from_status):'Awal'}</span><span>→</span><span className="uppercase text-emerald-700">{statusLabel(h.to_status)}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}
         </div>}
       </ModalForm>
 
@@ -924,7 +1020,7 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
             <td className="px-6 py-5 font-mono font-bold text-slate-950">{l.id}</td><td className="px-6 py-5 text-slate-600 uppercase text-xs font-bold">{l.sumber}</td><td className="px-6 py-5 text-slate-900 font-medium">{l.nama}</td><td className="px-6 py-5"><span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${l.kategori==='bpjs'?'bg-blue-50 text-blue-700':l.kategori==='bencana'?'bg-orange-50 text-orange-700':'bg-emerald-50 text-emerald-700'}`}>{l.kategori||'ambulans'}</span></td>
             <td className="px-6 py-5 text-xs text-slate-700"><div className="font-bold">{l.service_start_at ? new Date(l.service_start_at).toLocaleString('id-ID') : ((l.kategori||'ambulans')==='ambulans' && l.jenis==='darurat'?'Saat ditugaskan':'-')}</div>{l.service_end_at && <div className="text-slate-500 mt-1">s/d {new Date(l.service_end_at).toLocaleString('id-ID')}</div>} {l.ambulance && <div className="mt-1 font-semibold text-emerald-700">{l.ambulance} • {l.driver}</div>}</td>
             <td className="px-6 py-5"><span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${l.status === 'menunggu' ? 'bg-amber-50 text-amber-700 border-amber-200' : l.status === 'selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{l.status.toUpperCase()}</span></td>
-            <td className="px-6 py-5 text-right"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openDetail(l.id)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{l.status==='menunggu' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Tugaskan Ambulans?','Sistem akan memilih ambulans dan driver yang tidak bentrok pada interval layanan ini.','Proses','Batal',()=>processReport(l.id),'success')}>Proses Penugasan</Button>}{l.status==='menunggu' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Proses Pengaduan?','Laporan akan ditandai sedang ditangani Karang Taruna tanpa penugasan ambulans.','Proses','Batal',()=>updateServiceStatus(l.id,'diproses'),'success')}>Proses Pengaduan</Button>}{l.status==='diproses' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Mulai Penjemputan?','Status unit akan menjadi bertugas.','Mulai','Batal',()=>updateServiceStatus(l.id,'dijemput'),'success')}>Dijemput</Button>}{l.status==='diproses' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Pengaduan?','Pengaduan akan ditandai selesai dan dapat diverifikasi admin.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesaikan</Button>}{l.status==='dijemput' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Layanan?','Ambulans dan driver akan dilepas jika tidak ada layanan aktif lain.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesai</Button>}{l.status==='selesai' && role==='admin' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Verifikasi Administrasi','Verifikasi laporan layanan selesai.','Verifikasi','Batal',()=>verifyReport(l.id),'success')}>Verifikasi Admin</Button>}</div></td>
+            <td className="px-6 py-5 text-right"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openDetail(l.id)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{l.status==='menunggu' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Tugaskan Ambulans?','Sistem akan memilih ambulans dan pengemudi yang tidak bentrok pada interval layanan ini.','Proses','Batal',()=>processReport(l.id),'success')}>Proses Penugasan</Button>}{l.status==='menunggu' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Proses Pengaduan?','Laporan akan ditandai sedang ditangani Karang Taruna tanpa penugasan ambulans.','Proses','Batal',()=>updateServiceStatus(l.id,'diproses'),'success')}>Proses Pengaduan</Button>}{l.status==='diproses' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Mulai Penjemputan?','Status unit akan menjadi bertugas.','Mulai','Batal',()=>updateServiceStatus(l.id,'dijemput'),'success')}>Dijemput</Button>}{l.status==='diproses' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Pengaduan?','Pengaduan akan ditandai selesai dan dapat diverifikasi admin.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesaikan</Button>}{l.status==='dijemput' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Layanan?','Ambulans dan pengemudi akan tersedia kembali apabila tidak ada layanan aktif lain.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesai</Button>}{l.status==='selesai' && role==='admin' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Verifikasi Administrasi','Verifikasi laporan layanan selesai.','Verifikasi','Batal',()=>verifyReport(l.id),'success')}>Verifikasi Admin</Button>}</div></td>
           </tr>)}</tbody>
         </table></div>
         <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {reportMeta.current_page} dari {reportMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page<=1} onClick={()=>setReportPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page>=reportMeta.last_page} onClick={()=>setReportPage(p=>p+1)}>Berikutnya</Button></div></div>
@@ -942,13 +1038,13 @@ const ViewAmbulans = ({ db, refreshDashboard, role, addToast }) => {
   const openEdit=(a)=>{setEditing(a);setOpen(true);};
   return <div>
     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Ambulans</h2><p className="text-sm text-slate-600">Lihat status unit dan perbarui data operasional ambulans dari kolom aksi.</p></div>{role==='admin'&&<Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah Unit</Button>}</div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Nopol</th><th className="p-4 text-left">Kapasitas</th><th className="p-4 text-left">Status Saat Ini</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{db.ambulans.map(a=><tr key={a.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-bold text-slate-950">{a.id}</td><td className="p-4">{a.nopol}</td><td className="p-4">{a.kapasitas} orang</td><td className="p-4 uppercase"><span className={`px-3 py-1 rounded-full text-xs font-bold ${a.status==='tersedia'?'bg-emerald-50 text-emerald-700':a.status==='maintenance'?'bg-red-50 text-red-700':'bg-blue-50 text-blue-700'}`}>{a.status}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>setDetail(a)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{role==='admin'&&<Button size="sm" variant="outline" onClick={()=>openEdit(a)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>}</div></td></tr>)}</tbody></table></div></Card>
-    <ModalForm isOpen={Boolean(detail)} onClose={()=>setDetail(null)} title="Detail Unit Ambulans">{detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode unit</p><p className="mt-1 font-black text-slate-950">{detail.id}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nomor polisi</p><p className="mt-1 font-bold text-slate-950">{detail.nopol}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kapasitas</p><p className="mt-1 text-slate-900">{detail.kapasitas} orang</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{detail.status}</p></div>{detail.notes&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Catatan</p><p className="mt-1 leading-6 text-slate-900">{detail.notes}</p></div>}</div>}</ModalForm>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Nomor Polisi</th><th className="p-4 text-left">Kapasitas</th><th className="p-4 text-left">Status Saat Ini</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{db.ambulans.map(a=><tr key={a.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-bold text-slate-950">{a.id}</td><td className="p-4">{a.nopol}</td><td className="p-4">{a.kapasitas} orang</td><td className="p-4 uppercase"><span className={`px-3 py-1 rounded-full text-xs font-bold ${a.status==='tersedia'?'bg-emerald-50 text-emerald-700':a.status==='maintenance'?'bg-red-50 text-red-700':'bg-blue-50 text-blue-700'}`}>{statusLabel(a.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>setDetail(a)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{role==='admin'&&<Button size="sm" variant="outline" onClick={()=>openEdit(a)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>}</div></td></tr>)}</tbody></table></div></Card>
+    <ModalForm isOpen={Boolean(detail)} onClose={()=>setDetail(null)} title="Detail Unit Ambulans">{detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode unit</p><p className="mt-1 font-black text-slate-950">{detail.id}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nomor polisi</p><p className="mt-1 font-bold text-slate-950">{detail.nopol}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kapasitas</p><p className="mt-1 text-slate-900">{detail.kapasitas} orang</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{statusLabel(detail.status)}</p></div>{detail.notes&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Catatan</p><p className="mt-1 leading-6 text-slate-900">{detail.notes}</p></div>}</div>}</ModalForm>
     <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Unit Ambulans':'Tambah Unit Ambulans'}><form onSubmit={submit} className="space-y-5">
       {!editing&&<FieldGuide label="Kode unit" help="Kode unik internal, contoh KT-03." required><input name="code" required placeholder="KT-03" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>}
       <FieldGuide label="Nomor polisi" help="Nomor registrasi kendaraan yang ditampilkan di administrasi unit." required><input name="plate_number" required defaultValue={editing?.nopol||''} placeholder="Z 1234 AB" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
       <FieldGuide label="Kapasitas" help="Jumlah penumpang/pasien yang dapat dilayani sesuai kebijakan operasional." required><input name="capacity" required type="number" min="1" max="10" defaultValue={editing?.kapasitas||1} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      {editing&&<FieldGuide label="Status unit" help="Pilih maintenance hanya jika unit tidak boleh menerima penugasan baru." required><select name="status" defaultValue={editing.status} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="tersedia">Tersedia</option><option value="dipesan">Dipesan</option><option value="bertugas">Bertugas</option><option value="maintenance">Maintenance</option></select></FieldGuide>}
+      {editing&&<FieldGuide label="Status unit" help="Pilih pemeliharaan hanya apabila unit tidak boleh menerima penugasan baru." required><select name="status" defaultValue={editing.status} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="tersedia">Tersedia</option><option value="dipesan">Dipesan</option><option value="bertugas">Bertugas</option><option value="maintenance">Pemeliharaan</option></select></FieldGuide>}
       <FieldGuide label="Catatan" help="Opsional, misalnya kondisi kendaraan atau informasi servis."><textarea name="notes" rows={3} defaultValue={editing?.notes||''} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
       <Button type="submit" className="w-full sm:w-auto">{editing?'Simpan Perubahan':'Simpan Unit'}</Button>
     </form></ModalForm>
@@ -975,14 +1071,14 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const [transactionTypeFilter,setTransactionTypeFilter]=useState('');
   const [transactionLoading,setTransactionLoading]=useState(false);
   useEffect(()=>{
-    if(role!=='admin'&&role!=='karta')return;
+    if(role!=='admin'&&role!=='petugas')return;
     loadSetting();
     const onRefresh=()=>loadSetting();
     window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
     return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);
   },[role]);
   useEffect(()=>{
-    if(!['admin','karta'].includes(role))return;
+    if(!['admin','petugas'].includes(role))return;
     let cancelled=false;
     const load=async()=>{
       setTransactionLoading(true);
@@ -994,7 +1090,7 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
     const onRefresh=()=>load();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
     return()=>{cancelled=true;window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);};
   },[role,transactionPage,transactionStatusFilter,transactionTypeFilter]);
-  if(!['admin','karta'].includes(role)) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses Admin atau Karta.</b></Card>;
+  if(!['admin','petugas'].includes(role)) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses Admin atau Petugas Karang Taruna.</b></Card>;
   const submit=async(e)=>{e.preventDefault();if(transactionSubmitting)return;setTransactionSubmitting(true);try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.request_uuid=transactionRequestUuidRef.current;f.amount=Number(f.amount);await api.post('/transactions',f);addToast('Transaksi dicatat dan menunggu verifikasi.','success');setOpen(false);transactionRequestUuidRef.current=newRequestUuid();refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}finally{setTransactionSubmitting(false);}};
   const saveSetting=async(e)=>{e.preventDefault();if(settingsSubmitting)return;setSettingsSubmitting(true);try{const form=new FormData(e.currentTarget);form.set('is_active',e.currentTarget.is_active.checked?'1':'0');await api.post('/infaq/settings',form);addToast('Pengaturan pembayaran diperbarui.','success');setOpenSettings(false);loadSetting();}catch(err){addToast(errorMessage(err),'error');}finally{setSettingsSubmitting(false);}};
   const verify=async(id)=>{try{const {data}=await api.post(`/transactions/${id}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
@@ -1004,9 +1100,9 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const viewProof=async(id)=>{const w=window.open('','_blank');try{const res=await api.get(`/transactions/${id}/proof`,{responseType:'blob'});const url=URL.createObjectURL(res.data);if(w)w.location=url;setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){if(w)w.close();addToast(errorMessage(err),'error');}};
   return <div>
     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Kas, Infaq & Transaksi</h2><p className="text-sm text-slate-600">Jenis pemasukan/pengeluaran kini terlihat langsung di tabel. Setiap baris selalu memiliki tombol aksi.</p></div><div className="flex flex-col sm:flex-row gap-2"><Button variant="outline" onClick={()=>{loadSetting();setOpenSettings(true);}}><QrCode className="w-4 h-4 mr-2"/>Pengaturan Pembayaran</Button><Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Transaksi</Button></div></div>
-    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3"><select value={transactionTypeFilter} onChange={e=>{setTransactionTypeFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua jenis</option><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select><select value={transactionStatusFilter} onChange={e=>{setTransactionStatusFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="pending">Pending</option><option value="verified">Verified</option><option value="rejected">Rejected</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{transactionLoading?'Memuat data...':`${transactionMeta.total} transaksi`}</span><span>25 / halaman</span></div></div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Jenis</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar / Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!transactionLoading&&transactionRows.length===0&&<tr><td colSpan={8} className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada transaksi pada filter ini.</td></tr>}{transactionRows.map(t=><tr key={t.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-mono text-slate-950">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${t.tipe==='pemasukan'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{t.tipe}</span></td><td className="p-4"><span className="text-xs font-bold uppercase text-slate-700">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium text-slate-900">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-500">WA ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold text-slate-950">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{t.status}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openTransactionDetail(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Detail</Button>{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>setRejectTarget(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {transactionMeta.current_page} dari {transactionMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page<=1} onClick={()=>setTransactionPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page>=transactionMeta.last_page} onClick={()=>setTransactionPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
-    <ModalForm isOpen={Boolean(detail)} onClose={closeTransactionDetail} title="Detail Transaksi">{detailLoading?<div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail transaksi...</div>:detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-bold text-slate-950">{detail.code}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</p><p className="mt-1 font-bold capitalize text-slate-950">{detail.type}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tanggal</p><p className="mt-1 text-slate-900">{detail.transaction_date}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{detail.status}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori / Pembayar</p><p className="mt-1 text-slate-900">{detail.payer_name||detail.category}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nominal</p><p className="mt-1 text-xl font-black text-slate-950">Rp{Number(detail.amount).toLocaleString('id-ID')}</p></div>{detail.description&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Keterangan</p><p className="mt-1 leading-6 text-slate-900">{detail.description}</p></div>}{detail.rejection_reason&&<div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800"><b>Alasan penolakan:</b> {detail.rejection_reason}</div>}{detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="text-xs font-bold text-slate-800">{h.from_status||'awal'} → <span className="uppercase text-emerald-700">{h.to_status}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}</div>}</ModalForm>
+    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3"><select value={transactionTypeFilter} onChange={e=>{setTransactionTypeFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua jenis</option><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select><select value={transactionStatusFilter} onChange={e=>{setTransactionStatusFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="pending">Menunggu Verifikasi</option><option value="verified">Terverifikasi</option><option value="rejected">Ditolak</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{transactionLoading?'Memuat data...':`${transactionMeta.total} transaksi`}</span><span>25 / halaman</span></div></div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Jenis</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar / Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!transactionLoading&&transactionRows.length===0&&<tr><td colSpan={8} className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada transaksi pada filter ini.</td></tr>}{transactionRows.map(t=><tr key={t.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-mono text-slate-950">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${t.tipe==='pemasukan'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{t.tipe}</span></td><td className="p-4"><span className="text-xs font-bold uppercase text-slate-700">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium text-slate-900">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-500">WA ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold text-slate-950">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{statusLabel(t.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openTransactionDetail(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Detail</Button>{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>setRejectTarget(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {transactionMeta.current_page} dari {transactionMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page<=1} onClick={()=>setTransactionPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page>=transactionMeta.last_page} onClick={()=>setTransactionPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <ModalForm isOpen={Boolean(detail)} onClose={closeTransactionDetail} title="Detail Transaksi">{detailLoading?<div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail transaksi...</div>:detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-bold text-slate-950">{detail.code}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</p><p className="mt-1 font-bold capitalize text-slate-950">{detail.type}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tanggal</p><p className="mt-1 text-slate-900">{detail.transaction_date}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{statusLabel(detail.status)}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori / Pembayar</p><p className="mt-1 text-slate-900">{detail.payer_name||detail.category}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nominal</p><p className="mt-1 text-xl font-black text-slate-950">Rp{Number(detail.amount).toLocaleString('id-ID')}</p></div>{detail.description&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Keterangan</p><p className="mt-1 leading-6 text-slate-900">{detail.description}</p></div>}{detail.rejection_reason&&<div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800"><b>Alasan penolakan:</b> {detail.rejection_reason}</div>}{detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="text-xs font-bold text-slate-800">{h.from_status?statusLabel(h.from_status):'Awal'} → <span className="uppercase text-emerald-700">{statusLabel(h.to_status)}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}</div>}</ModalForm>
     <ModalForm isOpen={open} onClose={()=>setOpen(false)} title="Tambah Transaksi"><form onSubmit={submit} className="space-y-5">
       <FieldGuide label="Jenis transaksi" help="Pemasukan menambah saldo kas. Pengeluaran mengurangi saldo setelah transaksi diverifikasi." required><select name="type" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select></FieldGuide>
       <FieldGuide label="Kategori" help="Contoh: donasi, operasional, BBM, perawatan ambulans, atau bantuan sosial." required><input name="category" required placeholder="Contoh: bbm" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
@@ -1049,18 +1145,18 @@ const ViewUsers = ({ addToast }) => {
   },[page]);
   const openCreate=()=>{setEditing(null);setOpen(true);};
   const openEdit=(u)=>{setEditing(u);setOpen(true);};
-  const submit=async(e)=>{e.preventDefault();try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(editing){if(!payload.password)delete payload.password;await api.patch(`/users/${editing.id}`,payload);addToast('User berhasil diperbarui.','success');}else{await api.post('/users',payload);addToast('User berhasil dibuat.','success');}setOpen(false);setEditing(null);load();}catch(err){addToast(errorMessage(err),'error');}};
+  const submit=async(e)=>{e.preventDefault();try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(editing){if(!payload.password)delete payload.password;await api.patch(`/users/${editing.id}`,payload);addToast('Data pengguna berhasil diperbarui.','success');}else{await api.post('/users',payload);addToast('Pengguna berhasil dibuat.','success');}setOpen(false);setEditing(null);load();}catch(err){addToast(errorMessage(err),'error');}};
   const toggleActive=async(u)=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');load();}catch(err){addToast(errorMessage(err),'error');}};
   return <div>
-    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen User</h2><p className="text-sm text-slate-600">Kelola akun Admin, Petugas, dan Karta. Karta hanya mendapat akses modul keuangan dan pembayaran.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat user...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah User</Button></div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Role</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 uppercase font-bold text-xs">{u.role}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="w-4 h-4 mr-1"/>Edit</Button><Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button></div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
-    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit User':'Tambah User'}><form onSubmit={submit} className="space-y-5">
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna</h2><p className="text-sm text-slate-600">Kelola akun Admin dan Petugas Karang Taruna. Admin memiliki kewenangan penuh, sedangkan Petugas menjalankan pelayanan warga, operasional, kas, transaksi, dan pengaturan pembayaran.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat pengguna...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah Pengguna</Button></div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Peran</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 font-bold text-xs text-slate-800">{u.role==='admin'?'Admin':'Petugas Karang Taruna'}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="w-4 h-4 mr-1"/>Edit</Button><Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button></div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Pengguna':'Tambah Pengguna'}><form onSubmit={submit} className="space-y-5">
       <FieldGuide label="Nama lengkap" help="Nama petugas yang tampil pada administrasi sistem." required><input name="name" required defaultValue={editing?.name||''} placeholder="Nama lengkap" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
       <FieldGuide label="Username" help="Minimal 4 karakter dan harus unik. Dapat digunakan untuk login." required><input name="username" required minLength={4} defaultValue={editing?.username||''} placeholder="username" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
       <FieldGuide label="Email" help="Email harus unik dan dapat digunakan untuk login." required><input name="email" type="email" required defaultValue={editing?.email||''} placeholder="nama@contoh.id" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      <FieldGuide label="Role" help="Admin mengelola sistem penuh. Petugas fokus pelayanan. Karta fokus kas, transaksi, QR, dan rekening pembayaran." required><select name="role" defaultValue={editing?.role||'petugas'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="petugas">Petugas</option><option value="karta">Karta</option><option value="admin">Admin</option></select></FieldGuide>
+      <FieldGuide label="Peran" help="Admin mengelola seluruh konfigurasi dan pengguna. Petugas Karang Taruna menjalankan pelayanan warga, operasional ambulans, kas, transaksi, dan pengaturan pembayaran." required><select name="role" defaultValue={editing?.role||'petugas'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="petugas">Petugas Karang Taruna</option><option value="admin">Admin</option></select></FieldGuide>
       <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika password tidak ingin diubah. Minimal 10 karakter jika diisi.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} placeholder={editing?'Kosongkan jika tidak diubah':'Minimal 10 karakter'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      <Button type="submit" className="w-full sm:w-auto">{editing?'Simpan Perubahan':'Simpan User'}</Button>
+      <Button type="submit" className="w-full sm:w-auto">{editing?'Simpan Perubahan':'Simpan Pengguna'}</Button>
     </form></ModalForm>
   </div>;
 };
@@ -1068,10 +1164,10 @@ const ViewUsers = ({ addToast }) => {
 const ViewLaporan = ({ addToast, role }) => {
   const download = async (url, filename) => { try { const res=await api.get(url,{responseType:'blob'}); const href=URL.createObjectURL(res.data); const a=document.createElement('a');a.href=href;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),1000); } catch(err){addToast(errorMessage(err),'error');} };
   return <div className="max-w-4xl mx-auto animate-in fade-in">
-    <Card className="mb-6 border-transparent shadow-lg bg-gradient-to-br from-[#022b20] to-[#011a13] text-white"><div className="flex items-center gap-4 sm:gap-5"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileSpreadsheet className="w-7 h-7 text-emerald-300"/></div><div><h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">Download Laporan Sistem</h2><p className="text-emerald-100/80 text-sm font-medium">Klik format yang dibutuhkan. File langsung terunduh tanpa membuka tab cetak.</p></div></div></Card>
+    <Card className="mb-6 border-transparent shadow-lg bg-gradient-to-br from-[#0b3b78] to-[#07132f] text-white"><div className="flex items-center gap-4 sm:gap-5"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileSpreadsheet className="w-7 h-7 text-cyan-200"/></div><div><h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">Unduh Laporan Sistem</h2><p className="text-blue-100/90 text-sm font-medium">Pilih format laporan yang diperlukan. File akan diunduh langsung tanpa membuka halaman cetak.</p></div></div></Card>
     <div className="grid gap-4">
       {(role==='admin'||role==='petugas')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup ambulans, pengaduan BPJS, laporan bencana, status, dan petugas layanan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
-      {(role==='admin'||role==='karta')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {(role==='admin'||role==='petugas')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
     </div>
   </div>;
 };
@@ -1147,7 +1243,7 @@ export default function App() {
     }catch(err){ if(err?.response?.status!==401) console.warn('Session refresh failed'); }
   };
   const checkSync=async()=>{
-    if(!getToken() || document.visibilityState!=='visible' || !['admin','petugas','karta'].includes(role)) return;
+    if(!getToken() || document.visibilityState!=='visible' || !['admin','petugas'].includes(role)) return;
     try{
       const {data}=await api.get('/sync');
       const signature=JSON.stringify(data.revisions||{});
@@ -1203,7 +1299,7 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if(!['admin','petugas','karta'].includes(role)) return;
+    if(!['admin','petugas'].includes(role)) return;
     revisionRef.current=null;
     notificationSignatureRef.current=null;
     refreshDashboard();
@@ -1234,8 +1330,9 @@ export default function App() {
   return <>
     <div className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[9999] flex flex-col gap-3 pointer-events-none">{toasts.map(t=><div key={t.id} className="pointer-events-auto bg-[#111] text-white px-4 sm:px-5 py-3.5 rounded-xl w-full sm:w-auto shadow-2xl text-sm font-bold flex items-center gap-3">{t.type==='success'?<CheckCircle2 className="w-5 h-5 text-emerald-400"/>:<AlertCircle className={`w-5 h-5 ${t.type==='error'?'text-red-400':'text-blue-400'}`}/>} {t.msg}</div>)}</div>
     <ConfirmModal {...confirmModal}/>
+    <DeveloperWatermark/>
     {role==='warga'&&<PublicView setRole={setRole} db={db} publicStats={publicStats} addToast={addToast}/>} 
-    {role==='login'&&<Login setRole={setRole} addToast={addToast} onLogin={setCurrentUser}/>} 
-    {['admin','petugas','karta'].includes(role)&&<DashboardLayout role={role} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>} 
+    {role==='login'&&<Login setRole={setRole} addToast={addToast} onLogin={setCurrentUser} demo={publicStats.demo}/>} 
+    {['admin','petugas'].includes(role)&&<DashboardLayout role={role} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>} 
   </>;
 }

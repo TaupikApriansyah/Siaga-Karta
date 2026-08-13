@@ -27,7 +27,7 @@ class UserController extends Controller
             'name'=>'required|string|max:120',
             'email'=>'required|email|max:190|unique:users,email',
             'username'=>'required|string|min:4|max:60|regex:/^[a-z0-9._-]+$/|unique:users,username',
-            'role'=>'required|in:admin,petugas,karta',
+            'role'=>'required|in:admin,petugas',
             'password'=>'required|string|min:10|max:200',
         ]);
         $u=User::create($d);
@@ -45,7 +45,7 @@ class UserController extends Controller
             'name'=>'sometimes|string|max:120',
             'email'=>['sometimes','email','max:190',Rule::unique('users','email')->ignore($user->id)],
             'username'=>['sometimes','string','min:4','max:60','regex:/^[a-z0-9._-]+$/',Rule::unique('users','username')->ignore($user->id)],
-            'role'=>'sometimes|in:admin,petugas,karta',
+            'role'=>'sometimes|in:admin,petugas',
             'is_active'=>'sometimes|boolean',
             'password'=>'nullable|string|min:10|max:200',
         ]);

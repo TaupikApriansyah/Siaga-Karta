@@ -1,211 +1,482 @@
-# Siaga Karta
+<p align="center">
+  <img src="docs/logo-karang-taruna.png" alt="Logo Karang Taruna" width="110">
+</p>
 
-Siaga Karta adalah aplikasi Laravel 12 + React untuk pelayanan warga, ambulans, pengaduan sosial, kas, infaq, dan administrasi Karang Taruna. Backend menjadi sumber kebenaran untuk autentikasi, otorisasi, validasi, status layanan, saldo, penjadwalan, audit, dan file privat. React menangani pengalaman pengguna dan live sync ringan.
+<h1 align="center">SIAGA KARTA</h1>
+<p align="center"><strong>Sistem Informasi Pelayanan Warga dan Administrasi Karang Taruna Terintegrasi</strong></p>
+<p align="center">
+  Pelayanan warga • Ambulans • Pengaduan sosial • Kas & pembayaran • Program sosial • Pelaporan
+</p>
 
-## Role dan batas akses
+<p align="center">
+  <img src="docs/screenshots/01-landing-hero.png" alt="Landing Page SIAGA KARTA" width="100%">
+</p>
 
-| Role | Akses utama |
-|---|---|
-| Admin | Pelayanan, ambulans, program, keuangan, pembayaran, user, laporan, health check |
-| Petugas | Pelayanan warga, pengaduan, penugasan ambulans, laporan operasional |
-| Karta | Kas, transaksi, verifikasi pembayaran, QR, rekening, laporan keuangan |
+---
 
-Role pada UI hanya untuk navigasi. Setiap endpoint sensitif tetap diperiksa lagi melalui permission middleware di backend.
+## Tentang SIAGA KARTA
 
-## Perubahan keamanan dan reliabilitas
+**SIAGA KARTA** adalah sistem informasi berbasis web yang dirancang untuk membantu Karang Taruna mengelola pelayanan warga dalam satu alur yang terintegrasi. Sistem menghubungkan layanan publik untuk warga dengan dashboard operasional untuk **Admin** dan **Petugas Karang Taruna**.
 
-- Username dan email dinormalisasi `trim + lowercase` pada penyimpanan dan login.
-- Database unique constraint tetap menjadi pengaman terakhir terhadap duplikasi/race condition.
-- Login memakai rate limit berlapis: kombinasi IP + identitas, identitas, dan IP global.
-- Proxy tidak lagi dipercaya dengan wildcard. `TRUSTED_PROXIES` harus berisi proxy yang benar-benar digunakan.
-- Login gagal dicatat ke audit log dengan reason internal tanpa membocorkan reason tersebut ke client.
-- API token memiliki idle expiry dan absolute expiry. Frontend memperpanjang idle session saat aktif dan memberi peringatan sebelum absolute expiry.
-- Token tetap berada di `sessionStorage`. Sinkronisasi tab memakai `BroadcastChannel`, bukan token persisten di `localStorage`.
-- Logout menunggu request revoke selesai sebelum token lokal dibersihkan.
-- Password change atau deactivation user mencabut seluruh token aktif user tersebut.
-- Production memakai CSP, HSTS saat HTTPS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, COOP, dan CORP.
-- Setiap request mendapat `X-Request-Id` untuk korelasi audit.
+Sistem ini mencakup pengajuan layanan ambulans, pengaduan BPJS, laporan bencana, pelacakan status layanan, pengelolaan kas dan transaksi, pembayaran/infaq melalui QR atau rekening, program sosial, notifikasi, laporan, serta manajemen akun.
 
-## Pelayanan warga
+Tujuan utama SIAGA KARTA adalah membuat proses pelayanan lebih **jelas, terpantau, terdokumentasi, aman, dan mudah dikelola**.
 
-- Satu form untuk ambulans, pengaduan BPJS, dan bencana.
-- Form memiliki helper text, validasi browser + backend, loading lock, idempotency UUID, dan proteksi data belum tersimpan.
-- NIK 16 digit divalidasi backend, disimpan terenkripsi, dan pencarian memakai HMAC fingerprint.
-- Fingerprint memakai `DATA_FINGERPRINT_KEY` terpisah dari `APP_KEY`, sehingga rotasi key enkripsi tidak merusak lookup NIK.
-- KTP layanan terjadwal dan file sensitif disimpan di private storage.
-- Detail petugas menampilkan NIK ter-mask, bukan NIK penuh.
-- Riwayat perubahan status tersimpan dan tampil pada detail pelayanan.
+---
 
-State ambulans yang diizinkan:
+## Fitur Utama
+
+### Untuk Warga
+
+- Mengajukan **ambulans darurat**.
+- Menjadwalkan **ambulans terjadwal**.
+- Menyampaikan **pengaduan BPJS**.
+- Menyampaikan **laporan bencana**.
+- Memperoleh kode laporan untuk melacak perkembangan layanan.
+- Menggunakan fitur **Periksa Status Layanan**.
+- Melihat program sosial Karang Taruna.
+- Memberikan dukungan/infaq melalui **QR atau rekening resmi**.
+- Mengunggah bukti pembayaran untuk diverifikasi.
+- Menggunakan **SiagaBot** untuk memperoleh informasi dasar terkait layanan.
+
+### Untuk Petugas Karang Taruna
+
+- Melihat antrean pelayanan warga.
+- Menambahkan permohonan warga yang diterima melalui datang langsung, telepon, atau WhatsApp.
+- Memproses dan memperbarui status pelayanan.
+- Melakukan penugasan ambulans.
+- Memantau ketersediaan unit ambulans.
+- Mengelola kas dan transaksi.
+- Memverifikasi atau menolak bukti pembayaran.
+- Mengelola QR dan rekening pembayaran.
+- Melihat notifikasi operasional.
+- Mengunduh laporan pelayanan dan keuangan.
+
+### Untuk Admin
+
+Admin memperoleh seluruh fungsi operasional Petugas, ditambah:
+
+- Manajemen pengguna.
+- Penambahan dan perubahan unit ambulans.
+- Verifikasi administrasi tertentu.
+- Pengawasan data dan aktivitas sistem.
+- Pemeriksaan kondisi sistem sesuai hak akses Admin.
+
+---
+
+## Alur Sistem
+
+```mermaid
+flowchart TD
+    A[Warga memilih layanan] --> B[Mengisi dan mengirim permohonan]
+    B --> C[Validasi data oleh sistem]
+    C --> D[Kode laporan dibuat]
+    D --> E[Permohonan masuk ke dashboard Petugas]
+    E --> F[Petugas meninjau dan memproses]
+    F --> G{Jenis layanan}
+    G -->|Ambulans| H[Penugasan unit dan pengemudi]
+    G -->|BPJS/Bencana| I[Tindak lanjut pelayanan]
+    H --> J[Status layanan diperbarui]
+    I --> J
+    J --> K[Warga memeriksa status dengan kode laporan]
+    K --> L[Layanan selesai]
+    L --> M[Riwayat dan laporan tersimpan]
+```
+
+Untuk transaksi dan pembayaran:
+
+```mermaid
+flowchart TD
+    A[Warga / Petugas membuat transaksi] --> B[Status Pending]
+    B --> C[Admin / Petugas melakukan pemeriksaan]
+    C --> D{Keputusan}
+    D -->|Disetujui| E[Terverifikasi]
+    D -->|Ditolak| F[Ditolak dengan alasan]
+    E --> G[Masuk ke perhitungan kas]
+    G --> H[Laporan keuangan diperbarui]
+```
+
+---
+
+## Hak Akses
+
+SIAGA KARTA menggunakan dua role internal, yaitu **Admin** dan **Petugas Karang Taruna**. Warga tidak memerlukan akun untuk menggunakan layanan publik.
+
+| Fitur | Warga | Petugas Karang Taruna | Admin |
+|---|:---:|:---:|:---:|
+| Landing page & informasi publik | ✅ | ✅ | ✅ |
+| Ajukan pelayanan | ✅ | ✅ | ✅ |
+| Periksa status layanan | ✅ | ✅ | ✅ |
+| SiagaBot | ✅ | ✅ | ✅ |
+| Dashboard internal | ❌ | ✅ | ✅ |
+| Pelayanan warga | ❌ | ✅ | ✅ |
+| Input permohonan manual | ❌ | ✅ | ✅ |
+| Proses penugasan ambulans | ❌ | ✅ | ✅ |
+| Melihat data ambulans | Terbatas | ✅ | ✅ |
+| Tambah / ubah unit ambulans | ❌ | ❌ | ✅ |
+| Kas & transaksi | ❌ | ✅ | ✅ |
+| Verifikasi pembayaran | ❌ | ✅ | ✅ |
+| QR & rekening pembayaran | Lihat | Kelola | Kelola |
+| Unduh laporan | ❌ | ✅ | ✅ |
+| Manajemen pengguna | ❌ | ❌ | ✅ |
+
+> Hak akses tidak hanya dibatasi melalui tampilan. Endpoint sensitif juga diperiksa kembali oleh backend berdasarkan permission pengguna.
+
+---
+
+## Cara Penggunaan
+
+### 1. Warga
+
+1. Buka halaman utama SIAGA KARTA.
+2. Pilih layanan yang dibutuhkan:
+   - Ambulans Darurat
+   - Ambulans Terjadwal
+   - Pengaduan BPJS
+   - Laporan Bencana
+3. Lengkapi formulir sesuai kebutuhan layanan.
+4. Kirim permohonan.
+5. Simpan **kode laporan** yang diberikan sistem.
+6. Pilih **Periksa Status** untuk melihat perkembangan pelayanan.
+7. Untuk dukungan program/infaq, pilih menu pembayaran dan gunakan QR atau rekening yang ditampilkan.
+8. Jika diperlukan, unggah bukti pembayaran agar dapat diverifikasi Petugas.
+
+### 2. Petugas Karang Taruna
+
+1. Buka **Portal Administrasi**.
+2. Login menggunakan akun Petugas.
+3. Dashboard menampilkan ringkasan pelayanan, ambulans, kas, transaksi, dan notifikasi.
+4. Buka **Pelayanan Warga** untuk melihat permohonan yang masuk.
+5. Pilih **Detail** untuk melihat informasi permohonan.
+6. Gunakan **Proses Penugasan** untuk layanan ambulans.
+7. Perbarui status layanan sesuai kondisi pelayanan di lapangan.
+8. Buka **Kas & Pembayaran** untuk mengelola transaksi dan melakukan verifikasi pembayaran.
+9. Gunakan **Pengaturan Pembayaran** untuk memperbarui QR, bank, nomor rekening, dan pemilik rekening.
+10. Buka **Unduh Laporan** untuk memperoleh laporan pelayanan atau laporan keuangan.
+
+### 3. Admin
+
+Admin menggunakan portal yang sama dengan Petugas, tetapi memperoleh hak administrasi tambahan.
+
+Admin dapat:
+
+1. Memantau seluruh aktivitas melalui dashboard.
+2. Menangani pelayanan warga.
+3. Mengelola unit ambulans.
+4. Mengelola kas, transaksi, QR, dan rekening pembayaran.
+5. Mengunduh laporan.
+6. Membuka **Manajemen Pengguna** untuk membuat, mengubah, mengaktifkan, atau menonaktifkan akun Admin/Petugas.
+
+---
+
+## Status Pelayanan
+
+Untuk layanan ambulans, status utama mengikuti urutan:
 
 ```text
-menunggu -> diproses -> dijemput -> selesai
-     \          \
-      -> ditolak -> ditolak
+Menunggu → Diproses → Dijemput → Selesai
 ```
 
-Transisi yang tidak sah ditolak backend, walaupun request dibuat manual dari luar UI.
+Pada kondisi tertentu, layanan dapat ditolak sebelum tahapan pelayanan berlanjut.
 
-## Penjadwalan ambulans
-
-- Jadwal memakai interval `service_start_at` dan `service_end_at`.
-- Konflik menggunakan aturan `start_A < end_B AND end_A > start_B`.
-- Pencarian kandidat memakai subquery terindeks, bukan query konflik berulang per unit/driver.
-- Penugasan diserialisasi singkat melalui mutex row `system_revisions` dan row lock untuk mencegah double assignment pada request bersamaan.
-- Unit/driver dilepas kembali secara konsisten saat layanan selesai atau ditolak.
-
-## Kas, QR, dan rekening Karta
-
-Role `karta` dan Admin dapat:
-
-- melihat transaksi pemasukan/pengeluaran;
-- menambah transaksi internal;
-- melihat bukti pembayaran privat;
-- memverifikasi atau menolak transaksi pending;
-- mengunggah, mengganti, atau menghapus QR pembayaran;
-- mengatur nama bank, nomor rekening, dan nama pemilik rekening;
-- mengaktifkan kanal pembayaran publik;
-- mengunduh laporan keuangan.
-
-Saldo tidak dapat diedit manual. Saldo berasal dari ledger transaksi `verified`:
+Untuk pengaduan BPJS dan laporan bencana:
 
 ```text
-saldo = total pemasukan verified - total pengeluaran verified
+Menunggu → Diproses → Selesai
 ```
 
-Pengeluaran tidak dapat diverifikasi bila saldo terverifikasi tidak mencukupi. Transaksi tidak memiliki endpoint hard delete. Perubahan status dicatat pada history dan audit log.
+Riwayat perubahan status disimpan sehingga proses pelayanan dapat ditelusuri kembali.
 
-Upload QR memakai urutan aman: validasi -> simpan file baru -> commit database -> hapus file lama. Jadi kegagalan validasi atau database tidak membuat setting menunjuk file yang sudah hilang.
+---
 
-## Performa dan live sync
+## Kas, Pembayaran, dan Transparansi
 
-- Tabel pelayanan dan transaksi memakai pagination 25 baris dan filter server-side.
-- Tabel user juga dipaginasi.
-- Dashboard hanya memuat snapshot terbatas dan aggregate yang memang ditampilkan.
-- Relasi laporan memakai eager loading untuk menghindari N+1.
-- Kolom status, jadwal, foreign key, dan filter utama memiliki index database.
-- CSV besar di-stream per chunk agar tidak memuat seluruh dataset ke RAM.
-- CSV dinetralisasi dari spreadsheet formula injection.
-- Public bootstrap memakai cache singkat dan di-invalidate setelah perubahan relevan.
-- Live sync memakai revision counter kecil. Saat tab terlihat, frontend mengecek revision setiap 10 detik. Dashboard/tabel hanya di-fetch ulang jika revision berubah. Aksi dari user sendiri memicu refresh langsung.
-- Notification center tersedia untuk Admin, Petugas, dan Karta. `/sync` hanya membawa signature + unread count; daftar notifikasi di-fetch ulang hanya ketika berubah.
-- Slow-query profiler dapat diaktifkan dengan `SLOW_QUERY_MS`. SQL bindings sengaja tidak dicatat agar parameter sensitif tidak masuk log.
+SIAGA KARTA memisahkan transaksi menjadi **pemasukan** dan **pengeluaran**.
 
-Pendekatan ini sengaja tidak memakai polling seluruh dataset dan tidak menambah WebSocket/Redis sebagai dependency wajib. Sinkronisasi saat ini bersifat near-real-time, bukan push sub-second. Jika deployment nanti benar-benar membutuhkan push sub-second, Laravel Reverb dapat ditambahkan tanpa mengubah sumber kebenaran database.
+Saldo sistem tidak diedit secara manual. Nilai saldo berasal dari transaksi yang sudah terverifikasi:
 
-## Instalasi development
+```text
+Saldo = Pemasukan Terverifikasi - Pengeluaran Terverifikasi
+```
 
-Persyaratan:
+Fitur keuangan mencakup:
 
-- PHP 8.2+ dengan `mbstring`, PDO SQLite atau PDO MySQL
-- Composer
-- Node.js 20+
-- npm
-- PHP upload limit minimal 6 MB (`upload_max_filesize`) dan `post_max_size` minimal 12 MB untuk QR/bukti pembayaran. Dockerfile paket ini sudah mengaturnya.
+- Pemasukan dan pengeluaran.
+- Status transaksi Pending, Terverifikasi, atau Ditolak.
+- Verifikasi bukti pembayaran.
+- QR pembayaran.
+- Nomor rekening resmi.
+- Nama pemilik rekening.
+- Laporan kas dan transaksi.
+- Program sosial dan pencatatan bantuan.
+
+---
+
+## Keamanan Sistem
+
+SIAGA KARTA dirancang dengan beberapa lapisan keamanan dan reliabilitas:
+
+- **Role-Based Access Control** untuk membatasi hak Admin dan Petugas.
+- Pemeriksaan permission pada backend, bukan hanya menyembunyikan tombol pada frontend.
+- Password disimpan dalam bentuk hash.
+- Username dan email dinormalisasi agar perilaku login konsisten.
+- Rate limiting berlapis untuk mengurangi risiko brute-force login.
+- Token sesi memiliki masa aktif dan dapat dicabut ketika akun dinonaktifkan atau password diganti.
+- Sinkronisasi logout antar-tab tanpa menyimpan token secara permanen di `localStorage`.
+- Data sensitif seperti NIK dan nomor telepon memiliki perlindungan enkripsi/fingerprint.
+- Dokumen sensitif seperti KTP dan bukti pembayaran disimpan sebagai file privat.
+- Validasi tipe dan ukuran file upload.
+- Audit log untuk aktivitas penting.
+- Request ID untuk membantu penelusuran masalah.
+- Database transaction dan locking pada operasi yang sensitif terhadap perubahan bersamaan.
+- Idempotency untuk mengurangi risiko data ganda akibat klik ganda atau request ulang.
+- Security headers seperti CSP, HSTS pada HTTPS, X-Frame-Options, dan X-Content-Type-Options.
+- Pesan error internal tidak ditampilkan langsung kepada pengguna.
+
+---
+
+## Sinkronisasi Data
+
+Dashboard menggunakan mekanisme **near-real-time synchronization** yang ringan.
+
+Frontend tidak memuat seluruh data secara terus-menerus. Sistem hanya melakukan pemeriksaan revision/signature secara berkala. Jika terdapat perubahan, modul terkait akan diperbarui.
+
+Pendekatan ini menjaga aplikasi tetap responsif tanpa melakukan polling data besar secara berlebihan.
+
+---
+
+## SiagaBot
+
+SiagaBot merupakan asisten informasi ringan pada landing page. Bot dapat membantu menjawab kebutuhan dasar seperti:
+
+- Ketersediaan ambulans.
+- Informasi status layanan.
+- Informasi BPJS.
+- Informasi laporan bencana.
+
+<p align="center">
+  <img src="docs/screenshots/21-siagabot.png" alt="SiagaBot" width="360">
+</p>
+
+---
+
+## Teknologi
+
+- **Laravel 12** - Backend dan REST API.
+- **React** - Antarmuka pengguna.
+- **MySQL** - Database utama.
+- **Vite** - Build frontend.
+- **Apache** - Web server pada container aplikasi.
+- **Docker & Docker Compose** - Deployment aplikasi.
+- **Laravel Scheduler** - Pemeliharaan otomatis.
+- **Cloudflare Tunnel** - Opsional untuk akses HTTPS dari internet.
+
+---
+
+## Menjalankan dengan Docker
+
+### Persyaratan
+
+- Docker Desktop / Docker Engine.
+- Docker Compose.
+- Git.
+
+### 1. Clone repository
 
 ```bash
-cp .env.example .env
-php artisan key:generate
+git clone <URL-REPOSITORY-ANDA>
+cd SiagaKarta
 ```
 
-Generate secret fingerprint yang stabil:
-
-```bash
-openssl rand -hex 32
-```
-
-Masukkan hasilnya ke `DATA_FINGERPRINT_KEY`, lalu:
-
-```bash
-php artisan migrate --seed
-npm install
-npm run build
-php artisan serve
-```
-
-Seeder development tidak lagi mempunyai password default hardcoded. Saat akun development pertama dibuat, password acak akan dicetak di terminal. Jika ingin menentukan sendiri, isi `SEED_ADMIN_PASSWORD`, `SEED_PETUGAS_PASSWORD`, dan `SEED_KARTA_PASSWORD` sebelum menjalankan seed. Demo seeder dilewati di environment production.
-
-## Upgrade database lama
-
-Migration hardening menormalisasi username/email lama. Jika database sudah memiliki collision seperti `Admin` dan `admin`, migration akan berhenti dengan pesan yang jelas. Selesaikan duplikasi secara manual terlebih dahulu. Sistem sengaja tidak memilih atau menggabungkan akun secara otomatis.
-
-Setelah upgrade:
-
-```bash
-php artisan migrate
-php artisan optimize:clear
-npm install
-npm run build
-```
-
-## Docker production
+### 2. Siapkan konfigurasi environment
 
 ```bash
 cp .env.docker.example .env
 ```
 
-Isi minimal:
+Isi nilai penting pada `.env`, terutama key aplikasi, fingerprint key, password database, URL aplikasi, dan konfigurasi proxy sesuai environment deployment.
 
-- `APP_KEY`
-- `DATA_FINGERPRINT_KEY` minimal 32 karakter dan persisten
-- password database yang unik
-- `APP_URL=https://...`
-- `TRUSTED_PROXIES` sesuai proxy yang benar
-
-Kemudian:
+### 3. Build dan jalankan container
 
 ```bash
-docker compose build --pull
-docker compose up -d
+docker compose up -d --build
+```
+
+### 4. Periksa container
+
+```bash
 docker compose ps
 ```
 
-Container aplikasi hanya dipublish ke `127.0.0.1` secara default. Profile Cloudflare memakai IP internal tetap untuk `cloudflared`, sehingga Laravel tidak perlu mempercayai semua proxy.
+Pastikan service utama dalam kondisi berjalan/healthy.
 
-Untuk deployment production baru, buat Admin pertama secara interaktif setelah container aktif:
+### 5. Buka aplikasi
 
-```bash
-docker compose exec app php artisan siagakarta:create-admin --name="Administrator" --email=admin@example.com --username=admin
+Gunakan port yang ditentukan melalui `APP_PORT`, contoh:
+
+```text
+http://localhost:8090
 ```
 
-Password diminta secara tersembunyi dan tidak menjadi argument command. Setelah itu, akun Petugas/Karta dapat dibuat dari menu Manajemen User.
+---
 
-Backup Docker dapat dibuat dengan:
+## Akun Demo
 
-```bash
-./scripts/backup-docker.sh
+Jika project dijalankan dengan:
+
+```env
+DEMO_MODE=true
 ```
 
-Script menyimpan dump database, backup `storage/app`, dan checksum SHA-256 dengan permission ketat. Jadwalkan dari host menggunakan mekanisme scheduler server dan selalu uji restore pada environment terpisah. Container `scheduler` menjalankan Laravel Scheduler untuk maintenance ringan, termasuk prune token kedaluwarsa dan notifikasi lama. Audit log tidak dihapus otomatis.
+akun demo akan disediakan untuk pengujian:
 
-## Rotasi key
+| Peran | Username | Password |
+|---|---|---|
+| Admin | `admin` | `Rajawali21` |
+| Petugas Karang Taruna | `petugas` | `Rajawali21` |
 
-`APP_KEY` melindungi data terenkripsi. Gunakan `APP_PREVIOUS_KEYS` sesuai mekanisme Laravel ketika melakukan rotasi bertahap.
+> **Penting:** kredensial di atas hanya untuk demo. Sebelum digunakan pada sistem nyata, nonaktifkan `DEMO_MODE`, gunakan password unik yang kuat, dan jangan mempertahankan kredensial demo pada production.
 
-`DATA_FINGERPRINT_KEY` adalah secret terpisah dan sebaiknya tidak dirotasi rutin. Jika memang harus diganti, setelah konfigurasi key baru gunakan:
+---
 
-```bash
-php artisan siagakarta:rekey-fingerprints
-```
+## Dokumentasi Tampilan
 
-Pastikan data masih dapat didekripsi dengan current/previous APP key sebelum menjalankan perintah tersebut.
+### Landing Page
 
-## Pemeriksaan dan test
+<p align="center">
+  <img src="docs/screenshots/01-landing-hero.png" alt="Landing Page" width="100%">
+</p>
 
-Regression test tambahan tersedia untuk:
+<p align="center">
+  <img src="docs/screenshots/02-landing-layanan.png" alt="Layanan Terintegrasi" width="100%">
+</p>
 
-- login case-insensitive;
-- audit login gagal;
-- login rate limit;
-- permission role Karta terhadap finance vs data warga.
+<p align="center">
+  <img src="docs/screenshots/03-alur-layanan.png" alt="Alur Layanan Warga" width="100%">
+</p>
 
-Jalankan:
+<details>
+<summary><strong>Lihat dokumentasi landing page lainnya</strong></summary>
 
-```bash
-php artisan test
-npm run build
-```
+### Program Sosial
 
-Pada environment pembuatan paket ini, lint PHP dan parser JSX dapat dijalankan. Full Laravel test membutuhkan PHP `mbstring`, dan full Vite build membutuhkan dependency npm terpasang.
+![Program Sosial](docs/screenshots/04-program-sosial.png)
 
-Baca `SECURITY.md` dan `REVISION_NOTES_2026-08-12.md` sebelum deployment production.
+### Profil Karang Taruna Kota Bandung
+
+![Profil Karang Taruna](docs/screenshots/05-profil-karang-taruna.png)
+
+### Tentang Sistem
+
+![Tentang Sistem](docs/screenshots/06-tentang-sistem.png)
+
+</details>
+
+### Dashboard Admin
+
+![Dashboard Admin](docs/screenshots/07-admin-dashboard.png)
+
+<details>
+<summary><strong>Lihat dokumentasi fitur Admin</strong></summary>
+
+### Pelayanan Warga
+
+![Pelayanan Warga Admin](docs/screenshots/08-admin-pelayanan.png)
+
+### Input Permohonan Warga
+
+![Input Permohonan Warga](docs/screenshots/09-input-permohonan.png)
+
+### Tambah Unit Ambulans
+
+![Tambah Unit Ambulans](docs/screenshots/10-tambah-ambulans.png)
+
+### Manajemen Ambulans
+
+![Manajemen Ambulans](docs/screenshots/11-admin-ambulans.png)
+
+### Kas dan Transaksi
+
+![Kas dan Transaksi](docs/screenshots/12-kas-transaksi.png)
+
+### Tambah Transaksi
+
+![Tambah Transaksi](docs/screenshots/13-tambah-transaksi.png)
+
+### Pengaturan Pembayaran
+
+![Pengaturan Pembayaran](docs/screenshots/14-pengaturan-pembayaran.png)
+
+### Unduh Laporan
+
+![Unduh Laporan](docs/screenshots/15-unduh-laporan.png)
+
+### Manajemen Pengguna
+
+![Manajemen Pengguna](docs/screenshots/16-manajemen-pengguna.png)
+
+</details>
+
+### Dashboard Petugas Karang Taruna
+
+![Dashboard Petugas](docs/screenshots/17-petugas-dashboard.png)
+
+<details>
+<summary><strong>Lihat dokumentasi fitur Petugas</strong></summary>
+
+### Pelayanan Warga Petugas
+
+![Pelayanan Warga Petugas](docs/screenshots/18-petugas-pelayanan.png)
+
+### Ambulans Petugas
+
+![Ambulans Petugas](docs/screenshots/19-petugas-ambulans.png)
+
+### Detail Unit Ambulans
+
+![Detail Unit Ambulans](docs/screenshots/20-detail-ambulans.png)
+
+</details>
+
+---
+
+## Catatan Deployment Production
+
+Sebelum digunakan di lingkungan nyata:
+
+- Set `APP_ENV=production`.
+- Set `APP_DEBUG=false`.
+- Set `DEMO_MODE=false`.
+- Gunakan HTTPS.
+- Gunakan password database dan secret yang kuat.
+- Pastikan `APP_KEY` dan `DATA_FINGERPRINT_KEY` tersimpan dengan aman dan persisten.
+- Batasi trusted proxy hanya ke proxy yang benar-benar digunakan.
+- Lakukan backup database dan private storage secara rutin.
+- Uji proses restore backup.
+- Jangan menyimpan file `.env` ke repository publik.
+
+---
+
+## Dokumentasi Tambahan
+
+Repository juga dapat menyertakan dokumentasi teknis berikut:
+
+- `SECURITY.md` - catatan keamanan dan konfigurasi production.
+- `CLOUDFLARE_DEPLOY.md` - panduan akses melalui Cloudflare Tunnel.
+- `WINDOWS_DOCKER_FIX.md` - catatan troubleshooting Docker pada Windows.
+- `REVISION_NOTES_2026-08-12.md` - riwayat revisi teknis sistem.
+
+---
+
+## Pengembang
+
+**Taupik Apriansyah**  
+STMIK MARDIRA INDONESIA  
+GitHub: [TaupikApriansyah](https://github.com/TaupikApriansyah)
+
+---
+
+<p align="center">
+  <strong>SIAGA KARTA</strong><br>
+  Sistem pelayanan warga terintegrasi untuk Karang Taruna.
+</p>

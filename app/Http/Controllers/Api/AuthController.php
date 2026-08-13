@@ -51,8 +51,13 @@ class AuthController extends Controller
             'user_agent'=>substr((string)$request->userAgent(),0,1000),
         ]);
         $maxTokens=max(1,config('siagakarta.auth.max_active_tokens',8));
-        $staleIds=ApiToken::where('user_id',$user->id)->where('id','!=',$token->id)->latest('id')->skip($maxTokens-1)->pluck('id');
-        if($staleIds->isNotEmpty()) ApiToken::whereIn('id',$staleIds)->delete();
+        $keepOldTokenCount=max(0,$maxTokens-1);
+        $keepIds=$keepOldTokenCount>0
+            ? ApiToken::where('user_id',$user->id)->where('id','!=',$token->id)->latest('id')->limit($keepOldTokenCount)->pluck('id')
+            : collect();
+        $staleQuery=ApiToken::where('user_id',$user->id)->where('id','!=',$token->id);
+        if($keepIds->isNotEmpty()) $staleQuery->whereNotIn('id',$keepIds);
+        $staleQuery->delete();
         $request->attributes->set('api_user',$user);
         $request->attributes->set('api_token',$token);
         AuditService::log($request,'auth.login',$user);

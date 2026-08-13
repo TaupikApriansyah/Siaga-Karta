@@ -49,8 +49,10 @@ class SystemController extends Controller
     {
         $role=$request->attributes->get('api_user')->role;
         $q=AuditLog::query()->select('id','user_id','action','subject_type','subject_id','created_at')->with('user:id,name')->latest()->limit(20);
-        if($role==='petugas') $q->where(function($x){$x->where('action','like','report.%')->orWhere('action','like','ambulance.%');});
-        if($role==='karta') $q->where(function($x){$x->where('action','like','transaction.%')->orWhere('action','like','infaq.%');});
+        if($role==='petugas') $q->where(function($x){
+            $x->where('action','like','report.%')->orWhere('action','like','ambulance.%')
+              ->orWhere('action','like','transaction.%')->orWhere('action','like','infaq.%');
+        });
         return response()->json(['activity'=>$q->get()->map(fn($a)=>['id'=>$a->id,'action'=>$a->action,'subject_type'=>$a->subject_type,'subject_id'=>$a->subject_id,'actor'=>$a->user?->name ?? 'Sistem','created_at'=>$a->created_at])]);
     }
 }

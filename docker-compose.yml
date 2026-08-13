@@ -16,7 +16,9 @@ services:
       DB_USERNAME: ${DB_USERNAME:-siagakarta}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi di .env}
       RUN_MIGRATIONS: "true"
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.29.0.30}
+      DEMO_MODE: ${DEMO_MODE:-true}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-Rajawali21}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.29.0.1,172.29.0.30}
     ports:
       - "127.0.0.1:${APP_PORT:-8080}:80"
     volumes:

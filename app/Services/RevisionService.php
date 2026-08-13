@@ -24,8 +24,7 @@ class RevisionService
     {
         $wanted = match ($role) {
             'admin' => ['operations','finance','users','settings'],
-            'petugas' => ['operations'],
-            'karta' => ['finance','settings'],
+            'petugas' => ['operations','finance','settings'],
             default => [],
         };
         $rows = SystemRevision::query()->whereIn('scope',$wanted)->pluck('version','scope');

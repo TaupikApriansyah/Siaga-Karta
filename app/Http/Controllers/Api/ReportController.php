@@ -135,7 +135,7 @@ class ReportController extends Controller
                 ->when(ScheduleService::isCurrentWindow($start,$end),fn($q)=>$q->whereIn('status',['aktif','bertugas']))
                 ->whereNotIn('id',$conflictingDrivers)
                 ->orderBy('code')->lockForUpdate()->first();
-            if(!$drv) abort(422,'Tidak ada driver yang tersedia pada rentang jadwal tersebut.');
+            if(!$drv) abort(422,'Tidak ada pengemudi yang tersedia pada rentang jadwal tersebut.');
 
             $fromStatus=$report->status;
             $report->fill(['ambulance_id'=>$amb->id,'driver_id'=>$drv->id,'handled_by'=>$request->attributes->get('api_user')->id,'status'=>'diproses'])->save();
@@ -147,7 +147,7 @@ class ReportController extends Controller
         $report->refresh()->load(['ambulance:id,code,plate_number','driver:id,code,name']);
         AuditService::log($request,'report.assigned',$report,['ambulance_id'=>$report->ambulance_id,'driver_id'=>$report->driver_id],$before,$report->only('status','ambulance_id','driver_id','handled_by','service_start_at','service_end_at'));
         RevisionService::bump('operations'); Cache::forget('public.bootstrap');
-        return response()->json(['message'=>'Jadwal aman. Ambulans '.$report->ambulance->code.' dan driver '.$report->driver->name.' berhasil ditugaskan tanpa bentrok.']);
+        return response()->json(['message'=>'Jadwal aman. Ambulans '.$report->ambulance->code.' dan pengemudi '.$report->driver->name.' berhasil ditugaskan tanpa bentrok.']);
     }
 
     public function updateStatus(Request $request, Report $report)
@@ -164,7 +164,7 @@ class ReportController extends Controller
                 : ['menunggu'=>['diproses','ditolak'],'diproses'=>['selesai','ditolak'],'selesai'=>[],'ditolak'=>[]];
             if(!in_array($status,$allowed[$report->status]??[],true)) abort(422,"Perubahan status {$report->status} ke {$status} tidak diperbolehkan.");
             if($report->category!=='ambulans' && $status==='dijemput') abort(422,'Status dijemput hanya berlaku untuk layanan ambulans.');
-            if($status==='dijemput' && (!$report->ambulance_id || !$report->driver_id)) abort(422,'Tetapkan ambulans dan driver sebelum status dijemput.');
+            if($status==='dijemput' && (!$report->ambulance_id || !$report->driver_id)) abort(422,'Tetapkan ambulans dan pengemudi sebelum status dijemput.');
 
             $from=$report->status;
             $report->status=$status;

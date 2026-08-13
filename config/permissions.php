@@ -8,9 +8,7 @@ return [
         ],
         'petugas' => [
             'dashboard.view', 'operations.view', 'operations.manage',
-        ],
-        'karta' => [
-            'dashboard.view', 'finance.view', 'finance.manage', 'payment.manage',
+            'finance.view', 'finance.manage', 'payment.manage',
         ],
     ],
 ];

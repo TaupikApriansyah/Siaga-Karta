@@ -9,46 +9,32 @@ use App\Models\Program;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        if (app()->environment('production')) {
-            $this->command?->warn('Demo seeder dilewati di production. Buat akun Admin melalui prosedur bootstrap yang terkontrol.');
+        $demoMode=filter_var(env('DEMO_MODE', false), FILTER_VALIDATE_BOOL);
+        if (app()->environment('production') && !$demoMode) {
+            $this->command?->warn('Seeder demo dilewati karena DEMO_MODE=false.');
             return;
         }
 
-        $admin = User::where('email', 'admin@siagakarta.local')->first();
-        if (!$admin) {
-            $password = (string) env('SEED_ADMIN_PASSWORD', Str::password(20));
-            $admin = User::create([
-                'name'=>'Admin Kelurahan','email'=>'admin@siagakarta.local','username'=>'admin',
-                'role'=>'admin','is_active'=>true,'password'=>$password,
-            ]);
-            $this->command?->info("Admin development dibuat. Username: admin | Password: {$password}");
+        $password=(string)env('DEMO_PASSWORD','Rajawali21');
+        if(strlen($password)<8) {
+            throw new \RuntimeException('DEMO_PASSWORD minimal 8 karakter.');
         }
 
-        $petugas = User::where('email', 'petugas@siagakarta.local')->first();
-        if (!$petugas) {
-            $password = (string) env('SEED_PETUGAS_PASSWORD', Str::password(20));
-            $petugas = User::create([
-                'name'=>'Petugas Karang Taruna','email'=>'petugas@siagakarta.local','username'=>'petugas',
-                'role'=>'petugas','is_active'=>true,'password'=>$password,
-            ]);
-            $this->command?->info("Petugas development dibuat. Username: petugas | Password: {$password}");
-        }
-
-        $karta = User::where('email', 'karta@siagakarta.local')->first();
-        if (!$karta) {
-            $password = (string) env('SEED_KARTA_PASSWORD', Str::password(20));
-            User::create([
-                'name'=>'Pengelola Karta','email'=>'karta@siagakarta.local','username'=>'karta',
-                'role'=>'karta','is_active'=>true,'password'=>$password,
-            ]);
-            $this->command?->info("Karta development dibuat. Username: karta | Password: {$password}");
-        }
+        $admin=User::updateOrCreate(['username'=>'admin'],[
+            'name'=>'Administrator Demo','email'=>'admin@siagakarta.local',
+            'role'=>'admin','is_active'=>true,'password'=>$password,
+        ]);
+        $petugas=User::updateOrCreate(['username'=>'petugas'],[
+            'name'=>'Petugas Karang Taruna Demo','email'=>'petugas@siagakarta.local',
+            'role'=>'petugas','is_active'=>true,'password'=>$password,
+        ]);
+        User::where('username','karta')->delete();
+        $this->command?->info('Akun demo sinkron: admin dan petugas menggunakan password DEMO_PASSWORD yang sama.');
 
         Ambulance::updateOrCreate(['code'=>'KT-01'],['plate_number'=>'Z 1992 AB','capacity'=>2,'status'=>'tersedia']);
         Ambulance::updateOrCreate(['code'=>'KT-02'],['plate_number'=>'Z 8812 XY','capacity'=>1,'status'=>'tersedia']);

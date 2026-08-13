@@ -46,7 +46,7 @@ return new class extends Migration {
             }
         }
 
-        // String role is portable between SQLite/MySQL and allows the Karta role without enum drift.
+        // String role menjaga kompatibilitas SQLite/MySQL dan memudahkan pengelolaan role aplikasi.
         Schema::table('users', function (Blueprint $table) {
             $table->string('role',20)->default('petugas')->change();
         });
