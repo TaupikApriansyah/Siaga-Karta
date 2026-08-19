@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 FROM node:22-alpine AS frontend
 WORKDIR /app
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY vite.config.js ./
 COPY resources ./resources
 COPY public ./public
@@ -20,7 +20,7 @@ FROM php:8.3-apache-bookworm AS runtime
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libicu-dev libzip-dev libonig-dev libxml2-dev unzip curl \
-    && docker-php-ext-install pdo_mysql mbstring intl zip opcache dom \
+    && docker-php-ext-install pdo_mysql mbstring intl zip opcache \
     && a2enmod rewrite headers expires \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf

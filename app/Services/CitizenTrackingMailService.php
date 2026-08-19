@@ -21,12 +21,17 @@ class CitizenTrackingMailService
         $kecamatan = $report->region?->parent?->name ?? 'Kecamatan terkait';
         $category = ucwords(str_replace('_', ' ', $report->category));
         $url = rtrim((string)config('app.url'), '/').'/#lacak-'.$report->code;
+        $workflowLabel = match ($report->workflow_status) {
+            'diterima_kota' => 'Diterima Karang Taruna tingkat Kota',
+            'diajukan_kecamatan' => 'Menunggu validasi Karang Taruna tingkat Kecamatan',
+            default => 'Menunggu verifikasi Karang Taruna tingkat Kelurahan',
+        };
         $body = "Yth. {$report->citizen->name},\n\n"
             ."Pengaduan Anda telah tercatat pada SIAGA KARTA.\n\n"
             ."Kode pelacakan: {$report->code}\n"
             ."Kategori: {$category}\n"
             ."Wilayah: {$kelurahan}, {$kecamatan}\n"
-            ."Status awal: Menunggu verifikasi Karang Taruna tingkat Kelurahan\n\n"
+            ."Status awal: {$workflowLabel}\n\n"
             ."Simpan kode pelacakan tersebut. Kode digunakan untuk memeriksa perkembangan pengaduan melalui menu Periksa Status Layanan pada portal SIAGA KARTA.\n"
             ."Portal: {$url}\n\n"
             ."Pesan ini dikirim otomatis. Jangan membagikan kode pelacakan kepada pihak yang tidak berkepentingan.\n\n"

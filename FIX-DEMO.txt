@@ -1,0 +1,21 @@
+SIAGA KARTA - FIX/START DEMO
+============================
+
+Jika sebelumnya muncul "container siaga-karta-db-1 is unhealthy":
+
+1. Pastikan Docker Desktop aktif.
+2. Jalankan RESET-AND-START-DEMO.bat
+   Ini menghapus volume database demo lama yang gagal diinisialisasi, lalu rebuild dan menjalankan semua service.
+3. Setelah status siap, buka http://localhost:8080
+
+Login:
+- kota / Rajawali21
+- kecamatan / Rajawali21
+- kelurahan / Rajawali21
+
+Untuk start berikutnya tanpa menghapus data, gunakan START-DEMO.bat.
+
+Diagnosis manual bila diperlukan:
+  docker compose ps
+  docker compose logs db --tail=160
+  docker compose logs app --tail=220

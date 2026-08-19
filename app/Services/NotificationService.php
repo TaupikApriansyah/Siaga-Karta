@@ -64,7 +64,7 @@ class NotificationService
 
         [$title, $message] = match ($action) {
             'report.public_created' => ['Pengaduan warga baru', "{$code} tercatat untuk {$kelurahan}, {$kecamatan}. Pengaduan menunggu verifikasi awal Karang Taruna tingkat Kelurahan sebelum dapat diajukan ke Kecamatan."],
-            'report.manual_created' => ['Pengaduan baru dicatat internal', "{$code} dicatat melalui kanal internal untuk {$kelurahan}, {$kecamatan}. Pengaduan tetap masuk ke Karang Taruna tingkat Kelurahan sebagai tahap verifikasi awal."],
+            'report.manual_created' => ['Pengaduan baru dicatat internal', "{$code} dicatat melalui kanal internal untuk {$kelurahan}, {$kecamatan}. Tahap awal mengikuti level akun penginput dan riwayat workflow tersimpan pada detail pengaduan."],
             'report.forwarded_to_kecamatan' => ['Pengaduan menunggu validasi Kecamatan', "{$code} dari {$kelurahan} telah diajukan ke {$kecamatan}. Lakukan validasi dan cross-check data sebelum meneruskannya ke Karang Taruna tingkat Kota."],
             'report.returned_to_kelurahan' => ['Perbaikan data diperlukan', "{$code} dikembalikan oleh {$kecamatan} ke {$kelurahan}. Buka detail pengaduan untuk melihat catatan perbaikan."],
             'report.rejected_by_kecamatan' => ['Pengaduan ditolak Kecamatan', "{$code} tidak lolos validasi {$kecamatan}. Alasan penolakan tercatat pada riwayat pengaduan."],

@@ -15,6 +15,9 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Master wilayah adalah data referensi, bukan data demo.
+        $this->call(BandungRegionSeeder::class);
+
         $demoMode=filter_var(env('DEMO_MODE', false), FILTER_VALIDATE_BOOL);
         if (app()->environment('production') && !$demoMode) {
             $this->command?->warn('Seeder demo dilewati karena DEMO_MODE=false.');

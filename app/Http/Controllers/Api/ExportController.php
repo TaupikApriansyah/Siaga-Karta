@@ -87,7 +87,7 @@ class ExportController extends Controller
 
     public function financePdf(Request $request)
     {
-        abort_unless(in_array($request->attributes->get('api_user')->role,['kota','kecamatan','kelurahan'],true),403);
+        abort_unless($request->attributes->get('api_user')->role === 'kota',403);
         $rows=Transaction::latest('transaction_date')->latest('id')->limit(1500)->get();
         $saldo=(int)Transaction::where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
         $lines=['SALDO TERVERIFIKASI: Rp '.number_format($saldo,0,',','.')];

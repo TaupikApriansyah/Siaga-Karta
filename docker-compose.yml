@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
     env_file:
       - .env
     environment:
@@ -20,7 +21,7 @@ services:
       DEMO_PASSWORD: ${DEMO_PASSWORD:-Rajawali21}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.29.0.1,172.29.0.30}
     ports:
-      - "127.0.0.1:${APP_PORT:-8080}:80"
+      - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-8080}:80"
     volumes:
       - siagakarta_storage:/var/www/html/storage/app
     depends_on:
@@ -36,15 +37,18 @@ services:
       MYSQL_USER: ${DB_USERNAME:-siagakarta}
       MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi di .env}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD wajib diisi di .env}
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+      MYSQL_INITDB_SKIP_TZINFO: "1"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     volumes:
       - siagakarta_mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
-      interval: 10s
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u\"$${MYSQL_USER}\" -p\"$${MYSQL_PASSWORD}\" --silent"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 20
+      start_period: 30s
     networks: [siagakarta]
 
   scheduler:
@@ -52,6 +56,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
     env_file:
       - .env
     environment:
@@ -76,7 +81,7 @@ services:
     restart: unless-stopped
     profiles: ["cloudflare"]
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN wajib diisi untuk profile cloudflare}
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     command: tunnel --no-autoupdate --loglevel info --metrics 0.0.0.0:2000 run
     depends_on:
       app:

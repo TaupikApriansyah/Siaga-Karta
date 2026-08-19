@@ -1,0 +1,25 @@
+SIAGA KARTA - DEMO
+=================
+
+UNTUK KOMPUTER YANG SEBELUMNYA MENGALAMI ERROR DATABASE / "db is unhealthy":
+1. Pastikan Docker Desktop sudah running.
+2. Double-click: RESET-AND-START-DEMO.bat
+3. Setelah muncul "SIAGA KARTA SIAP UNTUK DEMO", buka:
+   http://localhost:8080
+
+LOGIN DEMO
+- kota / Rajawali21
+- kecamatan / Rajawali21
+- kelurahan / Rajawali21
+
+START BERIKUTNYA TANPA MENGHAPUS DATA
+- Double-click START-DEMO.bat
+
+POWERSHELL ALTERNATIF
+- Reset bersih:  powershell -ExecutionPolicy Bypass -File .\scripts\demo-start.ps1 -ResetData
+- Start normal:   powershell -ExecutionPolicy Bypass -File .\scripts\demo-start.ps1
+
+CLOUDFLARE
+- Tidak diperlukan untuk demo localhost.
+- Jika ingin tunnel, isi CLOUDFLARE_TUNNEL_TOKEN di .env lalu jalankan:
+  docker compose --profile cloudflare up -d

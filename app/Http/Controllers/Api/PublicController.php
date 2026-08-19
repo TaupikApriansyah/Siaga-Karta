@@ -53,7 +53,7 @@ class PublicController extends Controller
     {
         $rows=Region::query()->where('level','kelurahan')->where('is_active',true)
             ->with('parent:id,code,short_code,name,level')
-            ->orderBy('name')->get(['id','code','short_code','name','parent_id','rt_count','rw_count','centroid_latitude','centroid_longitude']);
+            ->orderBy('name')->get(['id','code','short_code','name','parent_id']);
         return response()->json(['kelurahan'=>$rows]);
     }
 

@@ -25,10 +25,10 @@ docker compose ps
 docker compose logs app --tail=200
 ```
 
-Akses lokal mengikuti `APP_PORT` di `.env`. Jika `APP_PORT=8090`:
+Akses lokal mengikuti `APP_PORT` di `.env`. Jika `APP_PORT=8080`:
 
 ```text
-http://localhost:8090
+http://localhost:8080
 ```
 
 Jika database sudah berisi data penting, jangan gunakan `down -v`. Cukup:

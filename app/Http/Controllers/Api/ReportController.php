@@ -39,21 +39,18 @@ class ReportController extends Controller
         $user=$request->attributes->get('api_user');
         $q=ReportAccessService::scope(Report::query(),$user)
             ->select([
-                'id','code','citizen_id','region_id','ambulance_id','driver_id','type','category','priority','source','status','workflow_status',
-                'escalation_level','pickup_location','description','medical_condition','rt_number','rw_number','latitude','longitude','assigned_agency',
-                'scheduled_at','service_start_at','service_end_at','created_at'
+                'id','code','citizen_id','region_id','category','priority','source','status','workflow_status','escalation_level','created_at'
             ])
             ->with([
-                'citizen:id,name,phone_last4',
+                'citizen:id,name',
                 'region:id,code,short_code,name,level,parent_id','region.parent:id,code,short_code,name,level',
-                'ambulance:id,code,plate_number','driver:id,code,name'
-            ])->latest();
+            ])->latest('id');
         if(!empty($filters['status'])) $q->where('status',$filters['status']);
         if(!empty($filters['workflow_status'])) $q->where('workflow_status',$filters['workflow_status']);
         if(!empty($filters['category'])) $q->where('category',$filters['category']);
         if(!empty($filters['priority'])) $q->where('priority',$filters['priority']);
         if(!empty($filters['region_id'])) $q->where('region_id',$filters['region_id']);
-        return response()->json($q->paginate(min(max((int)($filters['per_page']??25),10),100)));
+        return response()->json($q->paginate(min(max((int)($filters['per_page']??20),10),100)));
     }
 
     public function show(Request $request, Report $report)
@@ -133,15 +130,21 @@ class ReportController extends Controller
                 $code=TrackingCodeService::nextForKelurahan($region);
                 $start=($data['category']==='ambulans' && $data['type']==='terjadwal')?\Carbon\Carbon::parse($data['scheduled_at']):null;
                 $end=$start?->copy()->addMinutes((int)($data['service_duration_minutes']??ScheduleService::DEFAULT_DURATION_MINUTES));
+                [$workflowStatus,$escalationLevel,$kotaReceivedAt]=match($user->role) {
+                    'kota' => ['diterima_kota','kota',now()],
+                    'kecamatan' => ['diajukan_kecamatan','kecamatan',null],
+                    default => ['menunggu_kelurahan','kelurahan',null],
+                };
                 $report=Report::create([
                     'request_uuid'=>$data['request_uuid']??null,'code'=>$code,'tracking_key_hash'=>hash('sha256',$code),'citizen_id'=>$citizen->id,
                     'region_id'=>$region->id,'type'=>$data['type'],'category'=>$data['category'],'priority'=>$data['priority'],'source'=>$data['source'],
-                    'status'=>'menunggu','workflow_status'=>'menunggu_kelurahan','escalation_level'=>'kelurahan','pickup_location'=>$data['pickup_location']??null,
+                    'status'=>'menunggu','workflow_status'=>$workflowStatus,'escalation_level'=>$escalationLevel,'pickup_location'=>$data['pickup_location']??null,
                     'rt_number'=>$data['rt_number']??null,'rw_number'=>$data['rw_number']??null,'latitude'=>$data['latitude']??null,'longitude'=>$data['longitude']??null,
                     'destination'=>$data['destination']??null,'medical_condition'=>$data['medical_condition']??null,'description'=>$data['description']??null,
                     'scheduled_at'=>$data['scheduled_at']??null,'service_start_at'=>$start,'service_end_at'=>$end,'handled_by'=>$user->id,'submitted_by'=>$user->id,
+                    'kota_received_at'=>$kotaReceivedAt,
                 ]);
-                StatusHistoryService::record($request,$report,null,'menunggu_kelurahan');
+                StatusHistoryService::record($request,$report,null,$workflowStatus);
                 return $report;
             },3);
         } catch(\Throwable $e) {

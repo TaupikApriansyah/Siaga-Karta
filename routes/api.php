@@ -46,6 +46,9 @@ Route::middleware('api.token')->group(function(){
         Route::get('/reports',[ReportController::class,'index']);
         Route::get('/reports/{report}',[ReportController::class,'show']);
         Route::get('/reports/{report}/ktp',[ReportController::class,'ktp']);
+        // Export pelayanan mengikuti scope wilayah user, sehingga aman dibuka untuk Kecamatan/Kelurahan.
+        Route::get('/exports/pelayanan.csv',[ExportController::class,'serviceCsv']);
+        Route::get('/exports/pelayanan.pdf',[ExportController::class,'servicePdf']);
     });
 
     Route::middleware(['role:kota','permission:operations.view'])->group(function(){
@@ -53,8 +56,6 @@ Route::middleware('api.token')->group(function(){
         Route::get('/programs',[ProgramController::class,'index']);
         Route::get('/exports/ambulans.csv',[ExportController::class,'ambulanceCsv']);
         Route::get('/exports/ambulans.pdf',[ExportController::class,'ambulancePdf']);
-        Route::get('/exports/pelayanan.csv',[ExportController::class,'serviceCsv']);
-        Route::get('/exports/pelayanan.pdf',[ExportController::class,'servicePdf']);
     });
 
     Route::post('/reports/manual',[ReportController::class,'storeManual'])->middleware('permission:reports.input');

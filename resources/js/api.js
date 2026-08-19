@@ -56,11 +56,23 @@ export const subscribeAuth = (handler) => {
   return ()=>channel.removeEventListener('message',listener);
 };
 
+const readableValidation = (value) => {
+  const text=String(value||'').trim();
+  if(!text) return '';
+  if(/^validation(?:\.|$)/i.test(text)) return 'Data belum memenuhi ketentuan formulir. Periksa isian yang ditandai lalu coba lagi.';
+  return text;
+};
+
 export const errorMessage = (error) => {
   const data = error?.response?.data;
-  if (data?.errors) return Object.values(data.errors).flat().join(' ');
+  if (data?.errors) {
+    const messages=Object.values(data.errors).flat().map(readableValidation).filter(Boolean);
+    if(messages.length) return [...new Set(messages)].join(' ');
+  }
+  if(error?.response?.status===422) return readableValidation(data?.message) || 'Data belum valid. Periksa kembali formulir.';
   if(error?.response?.status===429) return 'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.';
+  if(error?.response?.status>=500) return 'Server belum dapat memproses data. Coba lagi. Jika berulang, periksa log aplikasi.';
   if(error?.code==='ECONNABORTED') return 'Permintaan terlalu lama. Periksa koneksi lalu coba lagi.';
-  return data?.message || error?.message || 'Terjadi kesalahan pada sistem.';
+  return readableValidation(data?.message) || error?.message || 'Terjadi kesalahan pada sistem.';
 };
 export default api;

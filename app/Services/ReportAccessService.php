@@ -22,11 +22,11 @@ class ReportAccessService
         }
 
         if ($user->role === 'kecamatan') {
-            $kelurahanIds = Region::query()
+            // Subquery menjaga filtering di database. Tidak perlu memuat seluruh ID kelurahan ke memori PHP.
+            return $query->whereIn('region_id', Region::query()
+                ->select('id')
                 ->where('level', 'kelurahan')
-                ->where('parent_id', $user->region_id)
-                ->pluck('id');
-            return $query->whereIn('region_id', $kelurahanIds);
+                ->where('parent_id', $user->region_id));
         }
 
         return $query->whereRaw('1 = 0');

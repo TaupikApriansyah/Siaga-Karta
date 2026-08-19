@@ -333,6 +333,7 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
   const [reportCategory, setReportCategory] = useState('ambulans');
   const [reportPriority, setReportPriority] = useState('reguler');
   const [publicRegions, setPublicRegions] = useState([]);
+  const [publicRegionsLoading, setPublicRegionsLoading] = useState(false);
   const [reportCoords, setReportCoords] = useState({latitude:'',longitude:''});
   const [showReport, setShowReport] = useState(false);
   const [showTrack, setShowTrack] = useState(false);
@@ -355,7 +356,8 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
   const loadInfaqInfo = async () => {
     try { const {data}=await api.get('/public/infaq'); setInfaqInfo(data.infaq || {}); } catch {}
   };
-  useEffect(() => { loadInfaqInfo(); api.get('/public/regions').then(({data})=>setPublicRegions(data.kelurahan||[])).catch(()=>setPublicRegions([])); }, []);
+  useEffect(() => { loadInfaqInfo(); }, []);
+  const loadPublicRegions=async()=>{if(publicRegions.length||publicRegionsLoading)return;setPublicRegionsLoading(true);try{const {data}=await api.get('/public/regions');setPublicRegions(data.kelurahan||[]);}catch{setPublicRegions([]);}finally{setPublicRegionsLoading(false);}};
   const openInfaq = async () => { setInfaqCode(''); setInfaqError(''); await loadInfaqInfo(); setShowInfaq(true); };
 
   useEffect(() => {
@@ -383,6 +385,7 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
     reportRequestUuidRef.current = newRequestUuid();
     setReportError('');
     setReportDirty(false);
+    loadPublicRegions();
     setShowReport(true);
     setMobileMenuOpen(false);
   };
@@ -740,7 +743,7 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
             <FieldGuide label="Nama lengkap" help="Nama pelapor yang dapat dikonfirmasi petugas." required><input name="name" required minLength={3} autoComplete="name" placeholder="Contoh: Budi Santoso" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
             <FieldGuide label="No. HP / WhatsApp Aktif" help="Nomor ini digunakan petugas untuk konfirmasi lapangan." required><input name="phone" required type="tel" inputMode="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
             <FieldGuide label="Gmail / email warga" help="Kode pelacakan dan notifikasi penerimaan dikirim ke alamat email ini." required><input name="email" required type="email" autoComplete="email" placeholder="nama@gmail.com" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
-            <FieldGuide label="Kelurahan" help="Pilih wilayah tempat pengaduan ditangani pertama kali." required><select name="region_id" required className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"><option value="">Pilih kelurahan</option>{publicRegions.map(r=><option key={r.id} value={r.id}>{r.name} · Kec. {r.parent?.name||'-'}</option>)}</select></FieldGuide>
+            <FieldGuide label="Kelurahan" help="Pilih wilayah tempat pengaduan ditangani pertama kali." required><select name="region_id" required disabled={publicRegionsLoading} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 disabled:bg-slate-100"><option value="">{publicRegionsLoading?'Memuat kelurahan...':'Pilih kelurahan'}</option>{publicRegions.map(r=><option key={r.id} value={r.id}>{r.name} · Kec. {r.parent?.name||'-'}</option>)}</select></FieldGuide>
             <FieldGuide label="Prioritas" help="Darurat, prioritas, dan reguler terpisah dari kategori pengaduan." required><select name="priority" value={reportPriority} onChange={e=>setReportPriority(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900">{REPORT_PRIORITIES.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></FieldGuide>
             <FieldGuide label="NIK 16 digit" help="Dipakai untuk validasi identitas dasar. NIK dilindungi dari salin dan tersembunyi secara default." required className="sm:col-span-2"><ProtectedNikInput name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} placeholder="16 digit angka" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
           </div></div>
@@ -889,7 +892,7 @@ const NotificationBell = ({ addToast }) => {
 const DashboardLayout = ({ role, currentUser, db, dashboardStats, updateDB, refreshDashboard, setRole, addToast, requestConfirm }) => {
   const allowedMenus = role==='kota'
     ? ['dashboard','pelayanan','ambulans','kas','laporan','users']
-    : ['dashboard','pelayanan'];
+    : ['dashboard','pelayanan','laporan'];
   const [activeMenu, setActiveMenu] = useState(() => {
     const saved=sessionStorage.getItem(`siagakarta_menu_${role}`) || 'dashboard';
     return allowedMenus.includes(saved)?saved:'dashboard';
@@ -913,17 +916,18 @@ const DashboardLayout = ({ role, currentUser, db, dashboardStats, updateDB, refr
 
   const renderContent = () => {
     switch(activeMenu) {
-      case 'dashboard': return <ViewDashboard db={db} role={role} stats={dashboardStats} addToast={addToast} />;
+      case 'dashboard': return <ViewDashboard db={db} role={role} stats={dashboardStats} addToast={addToast} refreshDashboard={refreshDashboard} />;
       case 'pelayanan': return <ViewPelayanan db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} requestConfirm={requestConfirm} />;
       case 'ambulans': return <ViewAmbulans db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} />;
       case 'kas': return <ViewKas db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} />;
       case 'users': return <ViewUsers addToast={addToast} />;
       case 'laporan': return <ViewLaporan addToast={addToast} role={role} />;
-      default: return <ViewDashboard db={db} role={role} stats={dashboardStats} addToast={addToast} />;
+      default: return <ViewDashboard db={db} role={role} stats={dashboardStats} addToast={addToast} refreshDashboard={refreshDashboard} />;
     }
   };
   const chooseMenu=(id)=>{
     if (!allowedMenus.includes(id)) return;
+    if(id==='dashboard') refreshDashboard();
     setActiveMenu(id);
     sessionStorage.setItem(`siagakarta_menu_${role}`, id);
     setMobileOpen(false);
@@ -1113,12 +1117,21 @@ const KelurahanStructureCard=({stats,addToast})=>{
   return <Card><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="font-black text-slate-950">Struktur Wilayah Kelurahan</h3><p className="mt-1 text-sm text-slate-600">Default pilot adalah 11 RT dan 11 RW. Pengelola Kelurahan dapat menyesuaikan jumlahnya sendiri.</p></div><div className="grid grid-cols-2 gap-3 sm:w-72"><FieldGuide label="Jumlah RT"><input type="number" min="0" max="999" value={rt} onChange={e=>setRt(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900"/></FieldGuide><FieldGuide label="Jumlah RW"><input type="number" min="0" max="999" value={rw} onChange={e=>setRw(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900"/></FieldGuide></div><Button disabled={saving} onClick={save}>{saving?'Menyimpan...':'Simpan Struktur'}</Button></div></Card>;
 };
 
-const ViewDashboard = ({ db, role, stats, addToast }) => {
+const ViewDashboard = ({ db, role, stats, addToast, refreshDashboard }) => {
   const canFinance=role==='kota';
   const canOperations=STAFF_ROLES.includes(role);
   const liveChart=stats?.daily?.length ? stats.daily : emptyChartData;
-  const pendingFinance=db.transaksi.filter(t=>t.status==='pending').length;
+  const pendingFinance=Number(stats?.finance_pending||0);
   const actionLabel=(action='')=>action.replaceAll('.',' · ').replaceAll('_',' ');
+  useEffect(()=>{
+    const onChange=()=>refreshDashboard();
+    window.addEventListener('siagakarta:operations-changed',onChange);
+    if(role==='kota') window.addEventListener('siagakarta:finance-changed',onChange);
+    return()=>{
+      window.removeEventListener('siagakarta:operations-changed',onChange);
+      window.removeEventListener('siagakarta:finance-changed',onChange);
+    };
+  },[role]);
   return (
     <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{duration:.28}} className="flex flex-col h-full gap-6 max-w-[1600px]">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1143,6 +1156,7 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
   const [inputCategory,setInputCategory]=useState('ambulans');
   const [inputPriority,setInputPriority]=useState('reguler');
   const [allowedRegions,setAllowedRegions]=useState([]);
+  const [allowedRegionsLoading,setAllowedRegionsLoading]=useState(false);
   const [manualCoords,setManualCoords]=useState({latitude:'',longitude:''});
   const [detail,setDetail]=useState(null);const [detailLoading,setDetailLoading]=useState(false);const detailRequestRef=useRef(0);
   const [manualSubmitting,setManualSubmitting]=useState(false);const [manualDirty,setManualDirty]=useState(false);const manualRequestUuidRef=useRef(newRequestUuid());
@@ -1150,17 +1164,17 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
   const [reportRows,setReportRows]=useState([]);const [reportPage,setReportPage]=useState(1);const [reportMeta,setReportMeta]=useState({current_page:1,last_page:1,total:0});
   const [reportStatusFilter,setReportStatusFilter]=useState('');const [reportCategoryFilter,setReportCategoryFilter]=useState('');const [workflowFilter,setWorkflowFilter]=useState('');const [reportLoading,setReportLoading]=useState(false);
 
-  const loadRegions=()=>api.get('/regions/allowed-kelurahan').then(({data})=>setAllowedRegions(data.regions||[])).catch(()=>setAllowedRegions([]));
-  useEffect(()=>{loadRegions();},[role]);
-  const loadReports=async()=>{setReportLoading(true);try{const {data}=await api.get('/reports',{params:{page:reportPage,per_page:25,status:reportStatusFilter||undefined,category:reportCategoryFilter||undefined,workflow_status:workflowFilter||undefined}});setReportRows((data.data||[]).map(mapReportRow));setReportMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});}catch(err){addToast(errorMessage(err),'error');}finally{setReportLoading(false);}};
-  useEffect(()=>{loadReports();const onRefresh=()=>loadReports();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);},[reportPage,reportStatusFilter,reportCategoryFilter,workflowFilter,role]);
+  const loadRegions=async()=>{if(allowedRegionsLoading)return;setAllowedRegionsLoading(true);try{const {data}=await api.get('/regions/allowed-kelurahan');setAllowedRegions(data.regions||[]);}catch(err){setAllowedRegions([]);addToast(errorMessage(err),'error');}finally{setAllowedRegionsLoading(false);}};
+  useEffect(()=>{setAllowedRegions([]);},[role]);
+  const loadReports=async()=>{setReportLoading(true);try{const {data}=await api.get('/reports',{params:{page:reportPage,per_page:20,status:reportStatusFilter||undefined,category:reportCategoryFilter||undefined,workflow_status:workflowFilter||undefined}});setReportRows((data.data||[]).map(mapReportRow));setReportMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});}catch(err){addToast(errorMessage(err),'error');}finally{setReportLoading(false);}};
+  useEffect(()=>{loadReports();const onRefresh=()=>loadReports();window.addEventListener('siagakarta:operations-changed',onRefresh);return()=>window.removeEventListener('siagakarta:operations-changed',onRefresh);},[reportPage,reportStatusFilter,reportCategoryFilter,workflowFilter,role]);
   useEffect(()=>{if(!manualDirty)return;const warn=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[manualDirty]);
   const closeManual=()=>{if(!manualDirty){setShowInputModal(false);return;}requestConfirm('Buang perubahan?','Data pengaduan yang sudah diisi belum disimpan.','Buang','Kembali',()=>{setManualDirty(false);setShowInputModal(false);},'danger');};
-  const openManual=()=>{manualRequestUuidRef.current=newRequestUuid();setManualDirty(false);setInputCategory('ambulans');setInputPriority('reguler');setInputType('darurat');setManualCoords({latitude:'',longitude:''});loadRegions();setShowInputModal(true);};
-  const handleManualInputSubmit=async(e)=>{e.preventDefault();const form=e.currentTarget;if(!form.checkValidity()){form.reportValidity();return;}setManualSubmitting(true);try{const payload=Object.fromEntries(new FormData(form).entries());payload.request_uuid=manualRequestUuidRef.current;payload.category=inputCategory;payload.priority=inputPriority;if(inputCategory==='ambulans') payload.type=inputType; else delete payload.type;if(manualCoords.latitude&&manualCoords.longitude)Object.assign(payload,manualCoords);const {data}=await api.post('/reports/manual',payload);addToast(`${data.message} Kode: ${data.code}`,'success');form.reset();setManualDirty(false);setShowInputModal(false);manualRequestUuidRef.current=newRequestUuid();await refreshDashboard();await loadReports();}catch(err){addToast(errorMessage(err),'error');}finally{setManualSubmitting(false);}};
+  const openManual=()=>{manualRequestUuidRef.current=newRequestUuid();setManualDirty(false);setInputCategory('ambulans');setInputPriority('reguler');setInputType('darurat');setManualCoords({latitude:'',longitude:''});if(!allowedRegions.length)loadRegions();setShowInputModal(true);};
+  const handleManualInputSubmit=async(e)=>{e.preventDefault();const form=e.currentTarget;if(!form.checkValidity()){form.reportValidity();return;}setManualSubmitting(true);try{const payload=Object.fromEntries(new FormData(form).entries());payload.request_uuid=manualRequestUuidRef.current;payload.category=inputCategory;payload.priority=inputPriority;if(inputCategory==='ambulans') payload.type=inputType; else delete payload.type;if(manualCoords.latitude&&manualCoords.longitude)Object.assign(payload,manualCoords);const {data}=await api.post('/reports/manual',payload);addToast(`${data.message} Kode: ${data.code}`,'success');form.reset();setManualDirty(false);setShowInputModal(false);manualRequestUuidRef.current=newRequestUuid();await loadReports();}catch(err){addToast(errorMessage(err),'error');}finally{setManualSubmitting(false);}};
   const openDetail=async(code)=>{const rid=++detailRequestRef.current;setDetail({code});setDetailLoading(true);try{const {data}=await api.get(`/reports/${code}`);if(rid===detailRequestRef.current)setDetail(data.report);}catch(err){if(rid===detailRequestRef.current){setDetail(null);addToast(errorMessage(err),'error');}}finally{if(rid===detailRequestRef.current)setDetailLoading(false);}};
   const closeDetail=()=>{detailRequestRef.current++;setDetail(null);setDetailLoading(false);};
-  const afterAction=async(msg)=>{addToast(msg,'success');await refreshDashboard();await loadReports();};
+  const afterAction=async(msg)=>{addToast(msg,'success');await loadReports();};
   const forwardKecamatan=code=>requestConfirm('Ajukan ke Kecamatan?','Pastikan Kelurahan telah melakukan verifikasi awal. Pengaduan akan masuk ke Kecamatan untuk validasi dan cross-check.','Ajukan','Batal',async()=>{try{const {data}=await api.post(`/reports/${code}/forward-kecamatan`,{});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}},'success');
   const validateKecamatan=code=>requestConfirm('Validasi dan kirim ke Kota?','Dengan konfirmasi ini, Kecamatan menyatakan data telah di-cross-check dan sesuai untuk diteruskan ke Karang Taruna Kota.','Validasi','Batal',async()=>{try{const {data}=await api.post(`/reports/${code}/kecamatan-decision`,{decision:'validate'});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}},'success');
   const submitDecision=async(e)=>{e.preventDefault();setActionSubmitting(true);try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());payload.decision=decisionTarget.decision;const {data}=await api.post(`/reports/${decisionTarget.code}/kecamatan-decision`,payload);setDecisionTarget(null);await afterAction(data.message);}catch(err){addToast(errorMessage(err),'error');}finally{setActionSubmitting(false);}};
@@ -1168,15 +1182,15 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
   const processReport=async code=>{try{const {data}=await api.post(`/reports/${code}/assign`,{});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}};
   const updateServiceStatus=async(code,status)=>{try{const {data}=await api.patch(`/reports/${code}/status`,{status});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}};
   const verifyReport=async code=>{try{const {data}=await api.post(`/reports/${code}/verify`);await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}};
-  const roleFlowText=role==='kelurahan'?'Kelurahan menerima pengaduan dari warga/RT/RW, melakukan verifikasi awal, lalu mengajukan data ke Kecamatan.':role==='kecamatan'?'Kecamatan hanya memvalidasi dan melakukan cross-check laporan dari Kelurahan. Data yang sesuai diteruskan ke Kota; data bermasalah dikembalikan atau ditolak.':'Kota memonitor seluruh Kecamatan dan Kelurahan, menerima laporan yang sudah tervalidasi Kecamatan, serta melakukan tindak lanjut/rujukan OPD.';
+  const roleFlowText=role==='kelurahan'?'Kelurahan dapat input pengaduan wilayah sendiri, verifikasi awal, lalu mengajukannya ke Kecamatan.':role==='kecamatan'?'Kecamatan dapat memantau seluruh Kelurahan di wilayahnya, input laporan untuk Kelurahan terkait, serta melakukan validasi/cross-check sebelum diteruskan ke Kota.':'Kota dapat memonitor seluruh wilayah dan input laporan langsung sebagai laporan tingkat Kota untuk tindak lanjut/rujukan OPD.';
 
   return <div className="flex flex-col h-full animate-in fade-in">
     <ModalForm isOpen={showInputModal} onClose={closeManual} title="Input Pengaduan Warga">
       <form onSubmit={handleManualInputSubmit} onChange={()=>setManualDirty(true)} className="space-y-6">
-        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><b>Alur wilayah:</b> pengaduan selalu ditempatkan pada Kelurahan terlebih dahulu. Gmail warga wajib diisi karena kode pelacakan dikirim melalui email; WhatsApp tetap menjadi salah satu kanal penerimaan.</div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><b>Alur wilayah:</b> laporan tetap terkait ke Kelurahan tujuan, tetapi tahap awal mengikuti level akun yang menginput. Kelurahan mulai dari verifikasi Kelurahan, Kecamatan mulai dari validasi Kecamatan, dan Kota masuk ke tahap Kota. Email warga dipakai untuk kode pelacakan.</div>
         <div className="grid gap-5 sm:grid-cols-2">
           <FieldGuide label="Sumber pengaduan" help="Kanal pertama warga menyampaikan pengaduan." required><select name="source" required className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"><option value="datang_langsung">Datang langsung</option><option value="whatsapp">WhatsApp</option><option value="telepon">Telepon</option></select></FieldGuide>
-          <FieldGuide label="Kelurahan tujuan awal" help="Daftar otomatis dibatasi sesuai hak akses akun." required><select name="region_id" required className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"><option value="">Pilih kelurahan</option>{allowedRegions.map(r=><option key={r.id} value={r.id}>{r.name}{r.parent?.name?` · Kec. ${r.parent.name}`:''}</option>)}</select></FieldGuide>
+          <FieldGuide label="Kelurahan tujuan awal" help="Daftar otomatis dibatasi sesuai hak akses akun." required><select name="region_id" required disabled={allowedRegionsLoading} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 disabled:bg-slate-100"><option value="">{allowedRegionsLoading?'Memuat kelurahan...':'Pilih kelurahan'}</option>{allowedRegions.map(r=><option key={r.id} value={r.id}>{r.name}{r.parent?.name?` · Kec. ${r.parent.name}`:''}</option>)}</select></FieldGuide>
           <FieldGuide label="Kategori" required><select value={inputCategory} onChange={e=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900">{REPORT_CATEGORIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></FieldGuide>
           <FieldGuide label="Prioritas" help="Terpisah dari jenis ambulans." required><select value={inputPriority} onChange={e=>setInputPriority(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900">{REPORT_PRIORITIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></FieldGuide>
         </div>
@@ -1193,7 +1207,7 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
         <FieldGuide label={inputCategory==='ambulans'?'Kondisi medis / kebutuhan ambulans':'Isi pengaduan'} required><textarea name={inputCategory==='ambulans'?'medical_condition':'description'} required minLength={3} rows={4} className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>
         {inputCategory==='ambulans'&&<FieldGuide label="Tujuan ambulans"><input name="destination" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>}
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-bold text-slate-900">Koordinat marker</div><div className="text-xs text-slate-500">Ambil dari perangkat bila laporan mencantumkan lokasi lapangan.</div></div><Button type="button" size="sm" variant="outline" onClick={()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{setManualCoords({latitude:String(p.coords.latitude),longitude:String(p.coords.longitude)});addToast('Koordinat berhasil diambil.','success');},()=>addToast('Koordinat perangkat tidak dapat diakses.','error'),{enableHighAccuracy:true,timeout:10000}):addToast('Geolocation tidak didukung.','error')}><MapPin className="mr-2 h-4 w-4"/>Ambil Lokasi</Button></div>{manualCoords.latitude&&<div className="mt-2 font-mono text-xs text-slate-700">{manualCoords.latitude}, {manualCoords.longitude}</div>}</div>
-        <div className="flex justify-end gap-3 border-t border-slate-100 pt-5"><Button type="button" variant="ghost" disabled={manualSubmitting} onClick={closeManual}>Batal</Button><Button type="submit" disabled={manualSubmitting}>{manualSubmitting?'Menyimpan...':'Simpan Pengaduan & Kirim Kode'}</Button></div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-5"><Button type="button" variant="ghost" disabled={manualSubmitting} onClick={closeManual}>Batal</Button><Button type="submit" disabled={manualSubmitting||allowedRegionsLoading}>{manualSubmitting?'Menyimpan...':allowedRegionsLoading?'Memuat Wilayah...':'Simpan Pengaduan & Kirim Kode'}</Button></div>
       </form>
     </ModalForm>
 
@@ -1213,7 +1227,7 @@ const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm })
     <ModalForm isOpen={Boolean(opdTarget)} onClose={()=>!actionSubmitting&&setOpdTarget(null)} title="Teruskan ke OPD / Instansi Terkait"><form onSubmit={submitOpd} className="space-y-5"><FieldGuide label="Nama OPD / instansi" help="Contoh: Dinas Sosial, Dinas Kesehatan, BPJS, Disdukcapil, BPBD, Satpol PP." required><input name="agency" required minLength={2} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Catatan rujukan"><textarea name="notes" rows={4} className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={()=>setOpdTarget(null)}>Batal</Button><Button type="submit" disabled={actionSubmitting}>{actionSubmitting?'Mengirim...':'Teruskan ke OPD'}</Button></div></form></ModalForm>
 
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Pelayanan & Pengaduan Warga</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{roleFlowText}</p></div><Button onClick={openManual}><Plus className="mr-2 h-5 w-5"/>Input Pengaduan</Button></div>
-    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-4"><select value={reportCategoryFilter} onChange={e=>{setReportCategoryFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua kategori</option>{REPORT_CATEGORIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select value={workflowFilter} onChange={e=>{setWorkflowFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua tahapan</option>{Object.entries(WORKFLOW_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select value={reportStatusFilter} onChange={e=>{setReportStatusFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua status operasional</option><option value="menunggu">Menunggu</option><option value="diproses">Diproses</option><option value="dijemput">Dijemput</option><option value="selesai">Selesai</option><option value="ditolak">Ditolak</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{reportLoading?'Memuat...':`${reportMeta.total} pengaduan`}</span><span>25/halaman</span></div></div>
+    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-4"><select value={reportCategoryFilter} onChange={e=>{setReportCategoryFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua kategori</option>{REPORT_CATEGORIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select value={workflowFilter} onChange={e=>{setWorkflowFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua tahapan</option>{Object.entries(WORKFLOW_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select value={reportStatusFilter} onChange={e=>{setReportStatusFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua status operasional</option><option value="menunggu">Menunggu</option><option value="diproses">Diproses</option><option value="dijemput">Dijemput</option><option value="selesai">Selesai</option><option value="ditolak">Ditolak</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{reportLoading?'Memuat...':`${reportMeta.total} pengaduan`}</span><span>20/halaman</span></div></div>
     <Card noPadding className="flex-1"><div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600"><tr><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Wilayah</th><th className="p-4 text-left">Warga</th><th className="p-4 text-left">Kategori / Prioritas</th><th className="p-4 text-left">Tahapan</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi sesuai role</th></tr></thead><tbody>{!reportLoading&&reportRows.length===0&&<tr><td colSpan={7} className="p-12 text-center text-slate-500">Tidak ada pengaduan pada filter ini.</td></tr>}{reportRows.map(l=><tr key={l.id} className="border-t border-slate-100 align-top text-slate-800"><td className="p-4 font-mono font-black text-slate-950">{l.id}<div className="mt-1 text-[10px] font-sans uppercase text-slate-400">{l.sumber}</div></td><td className="p-4"><div className="font-bold text-slate-950">{l.kelurahan}</div><div className="text-xs text-slate-500">Kec. {l.kecamatan}</div></td><td className="p-4 font-semibold text-slate-900">{l.nama}</td><td className="p-4"><div className="font-bold">{categoryLabel(l.kategori)}</div><div className={`mt-1 text-xs font-black ${l.prioritas==='darurat'?'text-red-700':'text-slate-500'}`}>{priorityLabel(l.prioritas)}</div></td><td className="p-4"><span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800">{workflowLabel(l.workflow)}</span></td><td className="p-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{statusLabel(l.status)}</span></td><td className="p-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openDetail(l.id)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>
       {role==='kelurahan'&&['menunggu_kelurahan','perlu_perbaikan_kelurahan'].includes(l.workflow)&&<Button size="sm" onClick={()=>forwardKecamatan(l.id)}>Ajukan Kecamatan</Button>}
       {role==='kecamatan'&&l.workflow==='diajukan_kecamatan'&&<><Button size="sm" variant="success" onClick={()=>validateKecamatan(l.id)}>Validasi → Kota</Button><Button size="sm" variant="outline" onClick={()=>setDecisionTarget({code:l.id,decision:'return'})}>Kembalikan</Button><Button size="sm" variant="danger" onClick={()=>setDecisionTarget({code:l.id,decision:'reject'})}>Tolak</Button></>}
@@ -1264,14 +1278,14 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const [transactionTypeFilter,setTransactionTypeFilter]=useState('');
   const [transactionLoading,setTransactionLoading]=useState(false);
   useEffect(()=>{
-    if(!STAFF_ROLES.includes(role))return;
+    if(role!=='kota')return;
     loadSetting();
     const onRefresh=()=>loadSetting();
-    window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
-    return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);
+    window.addEventListener('siagakarta:finance-changed',onRefresh);
+    return()=>window.removeEventListener('siagakarta:finance-changed',onRefresh);
   },[role]);
   useEffect(()=>{
-    if(!STAFF_ROLES.includes(role))return;
+    if(role!=='kota')return;
     let cancelled=false;
     const load=async()=>{
       setTransactionLoading(true);
@@ -1280,10 +1294,10 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
       finally{if(!cancelled)setTransactionLoading(false);}
     };
     load();
-    const onRefresh=()=>load();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
-    return()=>{cancelled=true;window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);};
+    const onRefresh=()=>load();window.addEventListener('siagakarta:finance-changed',onRefresh);
+    return()=>{cancelled=true;window.removeEventListener('siagakarta:finance-changed',onRefresh);};
   },[role,transactionPage,transactionStatusFilter,transactionTypeFilter]);
-  if(!STAFF_ROLES.includes(role)) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses pengelola Kota, Kecamatan, atau Kelurahan.</b></Card>;
+  if(role!=='kota') return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses pengelola Kota.</b></Card>;
   const submit=async(e)=>{e.preventDefault();if(transactionSubmitting)return;setTransactionSubmitting(true);try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.request_uuid=transactionRequestUuidRef.current;f.amount=Number(f.amount);await api.post('/transactions',f);addToast('Transaksi dicatat dan menunggu verifikasi.','success');setOpen(false);transactionRequestUuidRef.current=newRequestUuid();refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}finally{setTransactionSubmitting(false);}};
   const saveSetting=async(e)=>{e.preventDefault();if(settingsSubmitting)return;setSettingsSubmitting(true);try{const form=new FormData(e.currentTarget);form.set('is_active',e.currentTarget.is_active.checked?'1':'0');await api.post('/infaq/settings',form);addToast('Pengaturan pembayaran diperbarui.','success');setOpenSettings(false);loadSetting();}catch(err){addToast(errorMessage(err),'error');}finally{setSettingsSubmitting(false);}};
   const verify=async(id)=>{try{const {data}=await api.post(`/transactions/${id}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
@@ -1323,19 +1337,114 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
 };
 
 const ViewUsers = ({ addToast }) => {
-  const [users,setUsers]=useState([]);const [regions,setRegions]=useState([]);const [page,setPage]=useState(1);const [meta,setMeta]=useState({current_page:1,last_page:1,total:0});const [loading,setLoading]=useState(false);const [open,setOpen]=useState(false);const [editing,setEditing]=useState(null);const [formRole,setFormRole]=useState('kelurahan');
-  const load=async()=>{setLoading(true);try{const [{data:u},{data:r}]=await Promise.all([api.get('/users',{params:{page,per_page:25}}),api.get('/regions')]);setUsers(u.data||[]);setMeta({current_page:u.current_page||1,last_page:u.last_page||1,total:u.total||0});setRegions(r.regions||[]);}catch(e){addToast(errorMessage(e),'error');}finally{setLoading(false);}};
-  useEffect(()=>{load();const onRefresh=()=>load();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);},[page]);
-  const openCreate=()=>{setEditing(null);setFormRole('kelurahan');setOpen(true);};const openEdit=u=>{setEditing(u);setFormRole(u.role);setOpen(true);};
-  const submit=async e=>{e.preventDefault();try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(editing){if(!payload.password)delete payload.password;await api.patch(`/users/${editing.id}`,payload);addToast('Data pengguna dan wilayah berhasil diperbarui.','success');}else{await api.post('/users',payload);addToast('Akun pengelola wilayah berhasil dibuat.','success');}setOpen(false);setEditing(null);load();}catch(err){addToast(errorMessage(err),'error');}};
-  const toggleActive=async u=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');load();}catch(err){addToast(errorMessage(err),'error');}};
-  const selectable=regions.filter(r=>r.level===formRole);
-  return <div><div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna & Wilayah</h2><p className="text-sm text-slate-600">Karang Taruna Kota membuat akun Kecamatan/Kelurahan dan mengikat setiap akun ke wilayah spesifik. Role Kota tidak dapat dibuat dari panel ini.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="mr-2 h-4 w-4"/>Tambah Pengguna</Button></div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Peran</th><th className="p-4 text-left">Wilayah</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 font-bold text-xs">{roleDisplay(u.role)}</td><td className="p-4"><div className="font-bold text-slate-900">{u.region?.name||'-'}</div><div className="text-xs text-slate-500">{u.region?.code||''}</div></td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>{u.role!=='kota'&&<Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button>}</div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
-    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Pengguna':'Tambah Pengguna'}><form onSubmit={submit} className="space-y-5"><FieldGuide label="Nama lengkap" required><input name="name" required defaultValue={editing?.name||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Username" required><input name="username" required minLength={4} defaultValue={editing?.username||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Email akun" required><input name="email" type="email" required defaultValue={editing?.email||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide>
-      <FieldGuide label="Tingkat Karang Taruna" help="Akun Kecamatan dan Kelurahan memiliki hak akses berbeda sesuai alur validasi." required><select name="role" value={formRole} onChange={e=>setFormRole(e.target.value)} disabled={editing?.role==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900">{editing?.role==='kota'&&<option value="kota">Kota</option>}{editing?.role!=='kota'&&<><option value="kecamatan">Kecamatan</option><option value="kelurahan">Kelurahan</option></>}</select></FieldGuide>
-      <FieldGuide label="Wilayah akun" help={formRole==='kecamatan'?'Pilih kecamatan yang menjadi cakupan akun.':formRole==='kelurahan'?'Pilih kelurahan yang menjadi cakupan akun.':'Akun Kota terikat ke Kota Bandung.'} required={formRole!=='kota'}><select name="region_id" required={formRole!=='kota'} defaultValue={editing?.region_id||''} disabled={formRole==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih wilayah</option>{selectable.map(r=><option key={r.id} value={r.id}>{r.name} · {r.code}</option>)}</select></FieldGuide>
-      <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika tidak diubah. Minimal 10 karakter.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><Button type="submit">{editing?'Simpan Perubahan':'Simpan Pengguna'}</Button></form></ModalForm>
+  const [users,setUsers]=useState([]);
+  const [districts,setDistricts]=useState([]);
+  const [villages,setVillages]=useState([]);
+  const [page,setPage]=useState(1);
+  const [meta,setMeta]=useState({current_page:1,last_page:1,total:0});
+  const [loading,setLoading]=useState(false);
+  const [regionLoading,setRegionLoading]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  const [open,setOpen]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [formRole,setFormRole]=useState('kelurahan');
+  const [formDistrictId,setFormDistrictId]=useState('');
+  const [formRegionId,setFormRegionId]=useState('');
+
+  const loadUsers=async()=>{
+    setLoading(true);
+    try{
+      const {data}=await api.get('/users',{params:{page,per_page:20}});
+      setUsers(data.data||[]);
+      setMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});
+    }catch(e){addToast(errorMessage(e),'error');}
+    finally{setLoading(false);}
+  };
+  const loadDistricts=async()=>{
+    try{
+      const {data}=await api.get('/regions',{params:{level:'kecamatan'}});
+      setDistricts(data.regions||[]);
+    }catch(e){addToast(errorMessage(e),'error');}
+  };
+  const loadVillages=async(districtId, preferredRegionId='')=>{
+    if(!districtId){setVillages([]);setFormRegionId('');return;}
+    setRegionLoading(true);
+    try{
+      const {data}=await api.get('/regions',{params:{level:'kelurahan',parent_id:districtId}});
+      const rows=data.regions||[];
+      setVillages(rows);
+      setFormRegionId(preferredRegionId && rows.some(r=>String(r.id)===String(preferredRegionId)) ? String(preferredRegionId) : '');
+    }catch(e){setVillages([]);setFormRegionId('');addToast(errorMessage(e),'error');}
+    finally{setRegionLoading(false);}
+  };
+
+  useEffect(()=>{loadDistricts();},[]);
+  useEffect(()=>{
+    loadUsers();
+    const onRefresh=()=>loadUsers();
+    window.addEventListener('siagakarta:users-changed',onRefresh);
+    return()=>window.removeEventListener('siagakarta:users-changed',onRefresh);
+  },[page]);
+
+  const openCreate=()=>{
+    setEditing(null);setFormRole('kelurahan');setFormDistrictId('');setFormRegionId('');setVillages([]);setOpen(true);
+  };
+  const openEdit=async u=>{
+    setEditing(u);setFormRole(u.role);setVillages([]);
+    if(u.role==='kelurahan'){
+      const districtId=String(u.region?.parent_id||'');
+      setFormDistrictId(districtId);
+      setFormRegionId('');
+      if(districtId) await loadVillages(districtId,String(u.region_id||''));
+    }else if(u.role==='kecamatan'){
+      setFormDistrictId(String(u.region_id||''));setFormRegionId(String(u.region_id||''));
+    }else{
+      setFormDistrictId('');setFormRegionId(String(u.region_id||''));
+    }
+    setOpen(true);
+  };
+  const changeRole=e=>{
+    const next=e.target.value;
+    setFormRole(next);setFormDistrictId('');setFormRegionId('');setVillages([]);
+  };
+  const changeDistrict=async e=>{
+    const id=e.target.value;
+    setFormDistrictId(id);
+    if(formRole==='kecamatan'){
+      setFormRegionId(id);
+      setVillages([]);
+    }else{
+      setFormRegionId('');
+      await loadVillages(id);
+    }
+  };
+  const submit=async e=>{
+    e.preventDefault();if(submitting)return;
+    setSubmitting(true);
+    try{
+      const payload=Object.fromEntries(new FormData(e.currentTarget).entries());
+      if(editing){
+        if(!payload.password)delete payload.password;
+        await api.patch(`/users/${editing.id}`,payload);
+        addToast('Data pengguna dan wilayah berhasil diperbarui.','success');
+      }else{
+        await api.post('/users',payload);
+        addToast('Akun pengelola wilayah berhasil dibuat.','success');
+      }
+      setOpen(false);setEditing(null);setFormDistrictId('');setFormRegionId('');setVillages([]);await loadUsers();
+    }catch(err){addToast(errorMessage(err),'error');}
+    finally{setSubmitting(false);}
+  };
+  const toggleActive=async u=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');loadUsers();}catch(err){addToast(errorMessage(err),'error');}};
+
+  return <div><div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna & Wilayah</h2><p className="text-sm text-slate-600">Akun Kecamatan dan Kelurahan dibuat dengan pilihan wilayah bertingkat agar tidak salah mengikat hak akses.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="mr-2 h-4 w-4"/>Tambah Pengguna</Button></div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Peran</th><th className="p-4 text-left">Wilayah</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!loading&&users.length===0&&<tr><td colSpan={7} className="p-10 text-center text-sm font-semibold text-slate-500">Belum ada akun pada halaman ini.</td></tr>}{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 font-bold text-xs">{roleDisplay(u.role)}</td><td className="p-4"><div className="font-bold text-slate-900">{u.region?.name||'-'}</div><div className="text-xs text-slate-500">{u.region?.code||''}</div></td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>{u.role!=='kota'&&<Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button>}</div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);setFormDistrictId('');setFormRegionId('');setVillages([]);}} title={editing?'Edit Pengguna':'Tambah Pengguna'}><form onSubmit={submit} className="space-y-5"><FieldGuide label="Nama lengkap" required><input name="name" required defaultValue={editing?.name||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Username" required><input name="username" required minLength={4} defaultValue={editing?.username||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Email akun" required><input name="email" type="email" required defaultValue={editing?.email||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide>
+      <FieldGuide label="Tingkat Karang Taruna" help="Hak akses mengikuti tingkat akun dan wilayah yang dipilih." required><select name="role" value={formRole} onChange={changeRole} disabled={editing?.role==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900">{editing?.role==='kota'&&<option value="kota">Kota</option>}{editing?.role!=='kota'&&<><option value="kecamatan">Kecamatan</option><option value="kelurahan">Kelurahan</option></>}</select></FieldGuide>
+      {formRole==='kecamatan'&&<FieldGuide label="Kecamatan" help="Pilih satu kecamatan sebagai cakupan utama akun." required><select name="region_id" required value={formRegionId} onChange={changeDistrict} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih kecamatan</option>{districts.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide>}
+      {formRole==='kelurahan'&&<><FieldGuide label="Kecamatan" help="Pilih kecamatan terlebih dahulu untuk menyaring daftar kelurahan." required><select required value={formDistrictId} onChange={changeDistrict} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih kecamatan</option>{districts.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide><FieldGuide label="Kelurahan" help={regionLoading?'Memuat kelurahan...':'Daftar hanya menampilkan kelurahan di kecamatan terpilih.'} required><select name="region_id" required value={formRegionId} onChange={e=>setFormRegionId(e.target.value)} disabled={!formDistrictId||regionLoading} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">{regionLoading?'Memuat...':'Pilih kelurahan'}</option>{villages.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide></>}
+      {formRole==='kota'&&<div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm font-semibold text-blue-800">Akun Kota utama tetap terikat pada Kota Bandung dan tidak dapat dipindahkan ke wilayah lain dari panel ini.</div>}
+      <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika tidak diubah. Minimal 10 karakter.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><Button type="submit" disabled={submitting||regionLoading}>{submitting?'Menyimpan...':editing?'Simpan Perubahan':'Simpan Pengguna'}</Button></form></ModalForm>
   </div>;
 };
 
@@ -1345,7 +1454,7 @@ const ViewLaporan = ({ addToast, role }) => {
     <Card className="mb-6 border-transparent shadow-lg bg-gradient-to-br from-[#0b3b78] to-[#07132f] text-white"><div className="flex items-center gap-4 sm:gap-5"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileSpreadsheet className="w-7 h-7 text-cyan-200"/></div><div><h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">Unduh Laporan Sistem</h2><p className="text-blue-100/90 text-sm font-medium">Pilih format laporan yang diperlukan. File akan diunduh langsung tanpa membuka halaman cetak.</p></div></div></Card>
     <div className="grid gap-4">
       {STAFF_ROLES.includes(role)&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup 10 kategori pengaduan, prioritas, wilayah, tahapan validasi Kelurahan → Kecamatan → Kota, status, dan OPD tujuan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
-      {STAFF_ROLES.includes(role)&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {role==='kota'&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
     </div>
   </div>;
 };
@@ -1432,9 +1541,15 @@ export default function App() {
     if(!getToken() || document.visibilityState!=='visible' || !STAFF_ROLES.includes(role)) return;
     try{
       const {data}=await api.get('/sync',{params:{_ts:Date.now()}});
-      const signature=JSON.stringify(data.revisions||{});
-      if(revisionRef.current && revisionRef.current!==signature) await refreshDashboard();
-      revisionRef.current=signature;
+      const nextRevisions=data.revisions||{};
+      const previous=revisionRef.current;
+      if(previous){
+        const changedScopes=Object.keys(nextRevisions).filter(scope=>Number(nextRevisions[scope]||0)!==Number(previous[scope]||0));
+        if(changedScopes.length){
+          changedScopes.forEach(scope=>window.dispatchEvent(new CustomEvent(`siagakarta:${scope}-changed`)));
+        }
+      }
+      revisionRef.current={...nextRevisions};
       const notificationSignature=JSON.stringify(data.notifications||{});
       if(notificationSignatureRef.current && notificationSignatureRef.current!==notificationSignature) window.dispatchEvent(new CustomEvent('siagakarta:notifications-changed'));
       notificationSignatureRef.current=notificationSignature;
@@ -1504,7 +1619,7 @@ export default function App() {
     const onVisible=()=>{ if(document.visibilityState==='visible'){refreshSession();checkSync();} };
     document.addEventListener('visibilitychange',onVisible);
     const refreshTimer=setInterval(refreshSession,10*60*1000);
-    const syncTimer=setInterval(checkSync,5000);
+    const syncTimer=setInterval(checkSync,20000);
     const warningTimer=setInterval(()=>{
       const meta=getAuthMeta();
       const hard=meta.absolute_expires_at ? new Date(meta.absolute_expires_at).getTime() : 0;

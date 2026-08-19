@@ -30,7 +30,7 @@ if (-not $healthy) {
 
 # Docker Compose membaca APP_PORT dari .env. Untuk smoke-test ini ambil nilai
 # tersebut jika tersedia, lalu fallback ke port paket SIAGA KARTA.
-$port = "8090"
+$port = "8080"
 if (Test-Path ".env") {
     $portLine = Get-Content ".env" | Where-Object { $_ -match '^APP_PORT=' } | Select-Object -First 1
     if ($portLine) {

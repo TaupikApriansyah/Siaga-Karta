@@ -26,24 +26,14 @@ class DashboardController extends Controller
         $canFinance=$role==='kota';
 
         $reportScope=fn()=>ReportAccessService::scope(Report::query(),$user);
-        $laporan=$canOperations
-            ? $reportScope()->select('id','code','citizen_id','region_id','ambulance_id','driver_id','pickup_location','description','medical_condition','type','category','priority','status','workflow_status','escalation_level','source','scheduled_at','service_start_at','service_end_at','created_at')
-                ->with(['citizen:id,name','region:id,name,parent_id','region.parent:id,name','ambulance:id,code','driver:id,name'])->latest()->limit(50)->get()->map(fn($r)=>[
-                    'id'=>$r->code,'nama'=>$r->citizen->name,'lokasi'=>$r->pickup_location,'kondisi'=>$r->medical_condition ?: $r->description,'jenis'=>$r->type,
-                    'kategori'=>$r->category,'prioritas'=>$r->priority,'status'=>$r->status,'workflow_status'=>$r->workflow_status,'escalation_level'=>$r->escalation_level,
-                    'kelurahan'=>$r->region?->name,'kecamatan'=>$r->region?->parent?->name,'tgl'=>$r->created_at,'sumber'=>$r->source,
-                    'scheduled_at'=>$r->scheduled_at,'service_start_at'=>$r->service_start_at,'service_end_at'=>$r->service_end_at,
-                    'ambulance'=>$r->ambulance?->code,'driver'=>$r->driver?->name,
-                ]) : collect();
 
+        // Daftar pelayanan dan transaksi memiliki endpoint pagination sendiri.
+        // Dashboard hanya mengirim data ringkas agar payload tidak membengkak setiap sinkronisasi.
+        $laporan=collect();
+        $transaksi=collect();
         $ambulans=$canCityResources ? Ambulance::orderBy('code')->get()->map(fn($a)=>['db_id'=>$a->id,'id'=>$a->code,'nopol'=>$a->plate_number,'kapasitas'=>$a->capacity,'status'=>$a->status,'notes'=>$a->notes]) : collect();
         $driver=$canCityResources ? Driver::orderBy('code')->get()->map(fn($d)=>['db_id'=>$d->id,'id'=>$d->code,'nama'=>$d->name,'status'=>$d->status]) : collect();
-        $program=$canCityResources ? Program::latest()->limit(50)->get()->map(fn($p)=>['id'=>$p->code,'nama'=>$p->name,'target'=>$p->target_amount,'terkumpul'=>$p->collected_amount,'tersalurkan'=>$p->distributed_amount,'status'=>$p->status,'img'=>$p->image_url]) : collect();
-        $transaksi=$canFinance ? Transaction::latest('transaction_date')->latest('id')->limit(75)->get()->map(fn($t)=>[
-            'db_id'=>$t->id,'id'=>$t->code,'tipe'=>$t->type,'kategori'=>$t->category,'nominal'=>$t->amount,'status'=>$t->status,'tgl'=>$t->transaction_date->format('Y-m-d'),
-            'source'=>$t->source,'payer_name'=>$t->payer_name,'payer_phone_last4'=>$t->payer_phone_last4,'has_proof'=>(bool)$t->payment_proof_path,
-            'rejection_reason'=>$t->rejection_reason,'description'=>$t->description,
-        ]) : collect();
+        $program=$canCityResources ? Program::latest()->limit(30)->get()->map(fn($p)=>['id'=>$p->code,'nama'=>$p->name,'target'=>$p->target_amount,'terkumpul'=>$p->collected_amount,'tersalurkan'=>$p->distributed_amount,'status'=>$p->status,'img'=>$p->image_url]) : collect();
 
         $daily=collect();
         if($canOperations){
@@ -71,10 +61,12 @@ class DashboardController extends Controller
         }
 
         $saldo=$pemasukan=$pengeluaran=null;
+        $financePending=0;
         if($canFinance){
             $saldo=(int)Transaction::where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
             $pemasukan=(int)Transaction::where('status','verified')->where('type','pemasukan')->whereBetween('transaction_date',[now()->startOfMonth()->toDateString(),now()->endOfMonth()->toDateString()])->sum('amount');
             $pengeluaran=(int)Transaction::where('status','verified')->where('type','pengeluaran')->whereBetween('transaction_date',[now()->startOfMonth()->toDateString(),now()->endOfMonth()->toDateString()])->sum('amount');
+            $financePending=Transaction::where('status','pending')->count();
         }
 
         $activeReports=$canOperations?$reportScope()->whereNotIn('status',['selesai','ditolak'])->count():null;
@@ -82,7 +74,7 @@ class DashboardController extends Controller
         $region=$user->region?->loadMissing('parent');
 
         return response()->json(['db'=>compact('laporan','ambulans','driver','transaksi','program'),'stats'=>[
-            'saldo'=>$saldo,'pemasukan_bulan'=>$pemasukan,'pengeluaran_bulan'=>$pengeluaran,
+            'saldo'=>$saldo,'pemasukan_bulan'=>$pemasukan,'pengeluaran_bulan'=>$pengeluaran,'finance_pending'=>$financePending,
             'laporan_aktif'=>$activeReports,
             'ambulans_tersedia'=>$canOperations?Ambulance::where('status','tersedia')->count():null,
             'daily'=>$daily,'workflow_summary'=>$workflowSummary,
