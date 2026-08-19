@@ -1,20 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  AlertCircle, CheckCircle2, ChevronRight, X, Menu, Search, 
-  Home, Activity, Calendar, FileText, FileSpreadsheet, Users, 
-  Settings, LogOut, Truck, Plus, Eye, Download, ShieldCheck, 
+import {
+  AlertCircle, CheckCircle2, ChevronRight, X, Menu, Search,
+  Home, Activity, Calendar, FileText, FileSpreadsheet, Users,
+  Settings, LogOut, Truck, Plus, Eye, Download, ShieldCheck,
   User, ShieldAlert, Send, MessageCircle, QrCode, Upload, Clock, ReceiptText,
-  Ambulance, ArrowRight, HeartHandshake, Bell
+  Ambulance, ArrowRight, HeartHandshake, Bell, MapPin, RefreshCw, Building2
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import api, { errorMessage, getToken, setToken, getAuthMeta, setAuthMeta, newRequestUuid, requestSharedSession, broadcastSession, subscribeAuth } from './api';
 
 const emptyChartData = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(name=>({name,darurat:0,sosial:0}));
 
+const STAFF_ROLES = ['kota','kecamatan','kelurahan'];
+const ROLE_LABELS = { kota:'Kota', kecamatan:'Kecamatan', kelurahan:'Kelurahan' };
+const roleDisplay = (role) => ROLE_LABELS[role] || role || '-';
+const REPORT_CATEGORIES = [
+  ['kesehatan','Kesehatan'],['bpjs','BPJS'],['ambulans','Ambulans'],['lansia_disabilitas','Lansia / Disabilitas'],
+  ['bantuan_sosial','Bantuan Sosial'],['orang_terlantar','Orang Terlantar'],['anak_keluarga','Anak & Keluarga'],
+  ['data_sosial_desil','Data Sosial / Desil'],['kebencanaan','Kebencanaan'],['lainnya','Lainnya'],
+];
+const REPORT_PRIORITIES = [['darurat','Darurat'],['prioritas','Prioritas'],['reguler','Reguler']];
+const WORKFLOW_LABELS = {
+  menunggu_kelurahan:'Menunggu verifikasi Kelurahan', diajukan_kecamatan:'Menunggu validasi Kecamatan',
+  perlu_perbaikan_kelurahan:'Perlu perbaikan Kelurahan', ditolak_kecamatan:'Ditolak Kecamatan',
+  diterima_kota:'Diterima Karang Taruna Kota', diteruskan_opd:'Diteruskan ke OPD / Instansi',
+};
+const workflowLabel=(value)=>WORKFLOW_LABELS[value] || String(value||'-').replaceAll('_',' ');
+const categoryLabel=(value)=>Object.fromEntries(REPORT_CATEGORIES)[value] || value || '-';
+const priorityLabel=(value)=>Object.fromEntries(REPORT_PRIORITIES)[value] || value || '-';
+
 const mapReportRow = (r) => ({
-  id:r.code, nama:r.citizen?.name||'-', lokasi:r.pickup_location, kondisi:r.medical_condition, jenis:r.type, kategori:r.category,
-  status:r.status, tgl:r.created_at, sumber:r.source, scheduled_at:r.scheduled_at, service_start_at:r.service_start_at,
+  id:r.code, nama:r.citizen?.name||'-', lokasi:r.pickup_location, kondisi:r.medical_condition||r.description, jenis:r.type, kategori:r.category,
+  prioritas:r.priority, status:r.status, workflow:r.workflow_status, eskalasi:r.escalation_level, kelurahan:r.region?.name||'-', kecamatan:r.region?.parent?.name||'-',
+  tgl:r.created_at, sumber:r.source, scheduled_at:r.scheduled_at, service_start_at:r.service_start_at,
   service_end_at:r.service_end_at, ambulance:r.ambulance?.code||null, driver:r.driver?.name||null,
 });
 const mapTransactionRow = (t) => ({
@@ -29,7 +48,6 @@ const statusLabel = (value) => ({
   menunggu:'Menunggu', diproses:'Sedang Diproses', dijemput:'Dalam Penjemputan', selesai:'Selesai', ditolak:'Ditolak',
   tersedia:'Tersedia', dipesan:'Dipesan', bertugas:'Sedang Bertugas', maintenance:'Pemeliharaan',
 }[value] || String(value || '-').replaceAll('_',' '));
-const categoryLabel = (value) => ({ambulans:'Ambulans',bpjs:'Pengaduan BPJS',bencana:'Laporan Bencana'}[value] || value || '-');
 const serviceTypeLabel = (value) => ({darurat:'Darurat',terjadwal:'Terjadwal'}[value] || value || '-');
 
 const Button = ({ children, variant = 'primary', size = 'md', className = '', ...props }) => {
@@ -71,6 +89,84 @@ const FieldGuide = ({ label, help, required = false, children, className = '' })
   </div>
 );
 
+const ProtectedNikInput = ({ className = '', ...props }) => {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const hideNik = () => setVisible(false);
+    const onVisibility = () => { if (document.hidden) hideNik(); };
+    const onKey = (event) => {
+      if (event.key === 'PrintScreen') hideNik();
+    };
+
+    window.addEventListener('blur', hideNik);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKey, true);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('blur', hideNik);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('keyup', onKey, true);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  const blockCopy = (event) => {
+    event.preventDefault();
+    if (event.clipboardData) event.clipboardData.setData('text/plain', '');
+  };
+
+  const blockCopyShortcut = (event) => {
+    if ((event.ctrlKey || event.metaKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
+      event.preventDefault();
+    }
+  };
+
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? 'text' : 'password'}
+        autoComplete="off"
+        onCopy={blockCopy}
+        onCut={blockCopy}
+        onContextMenu={(event) => event.preventDefault()}
+        onDragStart={(event) => event.preventDefault()}
+        onKeyDown={blockCopyShortcut}
+        className={`${className} pr-28`}
+        data-sensitive="nik"
+        aria-label={props['aria-label'] || 'NIK 16 digit'}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        className="absolute inset-y-0 right-0 px-4 text-xs font-bold text-slate-600 hover:text-slate-900"
+        aria-pressed={visible}
+        aria-label={visible ? 'Sembunyikan NIK' : 'Tampilkan NIK'}
+      >
+        {visible ? 'Sembunyikan' : 'Tampilkan'}
+      </button>
+    </div>
+  );
+};
+
+const ProtectedNikText = ({ children, className = '' }) => (
+  <span
+    className={className}
+    onCopy={(event) => event.preventDefault()}
+    onCut={(event) => event.preventDefault()}
+    onContextMenu={(event) => event.preventDefault()}
+    onDragStart={(event) => event.preventDefault()}
+    onKeyDown={(event) => {
+      if ((event.ctrlKey || event.metaKey) && ['c', 'x'].includes(event.key.toLowerCase())) event.preventDefault();
+    }}
+    style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+    data-sensitive="nik"
+  >
+    {children}
+  </span>
+);
+
 class DashboardErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -110,7 +206,7 @@ const ConfirmModal = ({ isOpen, title, msg, confirmText, cancelText, onConfirm, 
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="p-6">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4
             ${type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
             {type === 'danger' ? <AlertCircle className="w-6 h-6" /> : <CheckCircle2 className="w-6 h-6" />}
           </div>
@@ -156,11 +252,11 @@ const SiagaBot = ({ db }) => {
   const handleSend = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-    
+
     setMsgs(prev => [...prev, { sender: 'user', text: input }]);
     const query = input.toLowerCase();
     setInput('');
-    
+
     api.post('/public/bot', { message: query })
       .then(({ data }) => setMsgs(prev => [...prev, { sender: 'bot', text: data.reply }]))
       .catch(() => setMsgs(prev => [...prev, { sender: 'bot', text: 'Layanan bot sedang tidak tersedia. Silakan gunakan menu layanan utama.' }]));
@@ -168,7 +264,7 @@ const SiagaBot = ({ db }) => {
 
   return (
     <>
-      <button 
+      <button
         onClick={() => setIsOpen(true)}
         className={`fixed bottom-6 right-6 w-14 h-14 bg-[#07132f] text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-[#10295b] hover:scale-110 transition-all z-50 ${isOpen ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
       >
@@ -200,9 +296,9 @@ const SiagaBot = ({ db }) => {
             <div ref={messagesEndRef} />
           </div>
           <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-100 flex gap-2">
-            <input 
+            <input
               value={input} onChange={(e)=>setInput(e.target.value)}
-              placeholder="Tanya ketersediaan ambulans..." 
+              placeholder="Tanya ketersediaan ambulans..."
               className="flex-1 px-4 py-2 bg-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-[#07132f] text-sm font-medium text-slate-950 caret-slate-950 placeholder:text-slate-500"
             />
             <button type="submit" className="w-10 h-10 bg-[#07132f] text-white rounded-xl flex items-center justify-center hover:bg-[#10295b] transition-colors">
@@ -230,11 +326,14 @@ const useLandingScroll = () => {
   return isScrolled;
 };
 
-const PublicView = ({ setRole, db, publicStats, addToast }) => {
+const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
   const isScrolled = useLandingScroll();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [formType, setFormType] = useState('darurat');
   const [reportCategory, setReportCategory] = useState('ambulans');
+  const [reportPriority, setReportPriority] = useState('reguler');
+  const [publicRegions, setPublicRegions] = useState([]);
+  const [reportCoords, setReportCoords] = useState({latitude:'',longitude:''});
   const [showReport, setShowReport] = useState(false);
   const [showTrack, setShowTrack] = useState(false);
   const [showInfaq, setShowInfaq] = useState(false);
@@ -256,7 +355,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
   const loadInfaqInfo = async () => {
     try { const {data}=await api.get('/public/infaq'); setInfaqInfo(data.infaq || {}); } catch {}
   };
-  useEffect(() => { loadInfaqInfo(); }, []);
+  useEffect(() => { loadInfaqInfo(); api.get('/public/regions').then(({data})=>setPublicRegions(data.kelurahan||[])).catch(()=>setPublicRegions([])); }, []);
   const openInfaq = async () => { setInfaqCode(''); setInfaqError(''); await loadInfaqInfo(); setShowInfaq(true); };
 
   useEffect(() => {
@@ -278,6 +377,8 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
 
   const openReport = (type) => {
     setReportCategory('ambulans');
+    setReportPriority(type==='darurat'?'darurat':'reguler');
+    setReportCoords({latitude:'',longitude:''});
     setFormType(type);
     reportRequestUuidRef.current = newRequestUuid();
     setReportError('');
@@ -288,7 +389,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
 
   const normalizeTrackingCode = (value) => {
     const upper = String(value || '').toUpperCase();
-    const match = upper.match(/(?:LPR|JDL|BPJ|BNC)-\d{8}-[A-Z0-9]{10}/);
+    const match = upper.match(/(?:SKB-[A-Z0-9]+-\d{4}-\d{5}|(?:LPR|BPJ|BNC|JDL)-\d{8}-[A-Z0-9]{10})/);
     return (match?.[0] || upper).replace(/\s+/g, '').slice(0, 64);
   };
 
@@ -313,7 +414,9 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       const form = new FormData(formElement);
       form.set('request_uuid', reportRequestUuidRef.current);
       form.set('category', reportCategory);
-      form.set('type', reportCategory === 'ambulans' ? formType : 'darurat');
+      if(reportCategory === 'ambulans') form.set('type', formType); else form.delete('type');
+      form.set('priority', reportPriority);
+      if(reportCoords.latitude && reportCoords.longitude){ form.set('latitude',reportCoords.latitude); form.set('longitude',reportCoords.longitude); }
       const { data } = await api.post('/public/reports', form);
       setTrackCode(data.tracking_code);
       setTrackResult(null);
@@ -323,6 +426,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       formElement.reset();
       reportRequestUuidRef.current = newRequestUuid();
       addToast(data.message, 'success');
+      refreshPublic?.();
     } catch (err) {
       const msg = errorMessage(err);
       setReportError(msg);
@@ -341,7 +445,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       setTrackError('Masukkan kode laporan terlebih dahulu.');
       return;
     }
-    if (!/^(LPR|JDL|BPJ|BNC)-\d{8}-[A-Z0-9]{10}$/.test(code)) {
+    if (!/^(?:SKB-[A-Z0-9]+-\d{4}-\d{5}|(?:LPR|BPJ|BNC|JDL)-\d{8}-[A-Z0-9]{10})$/.test(code)) {
       setTrackError('Format kode belum sesuai. Gunakan kode lengkap yang diterima setelah laporan dikirim.');
       return;
     }
@@ -358,6 +462,19 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       setTrackLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!showTrack || !trackResult?.code) return;
+    let cancelled = false;
+    const refreshTrackedReport = async () => {
+      try {
+        const { data } = await api.get(`/public/reports/${encodeURIComponent(trackResult.code)}`);
+        if (!cancelled) setTrackResult(data.report);
+      } catch {}
+    };
+    const timer = setInterval(refreshTrackedReport, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [showTrack, trackResult?.code]);
 
   const handleInfaqSubmit = async (e) => {
     e.preventDefault();
@@ -376,6 +493,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       addToast(data.message, 'success');
       formElement.reset();
       infaqRequestUuidRef.current = newRequestUuid();
+      refreshPublic?.();
     } catch (err) {
       const msg = errorMessage(err);
       setInfaqError(msg);
@@ -394,7 +512,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
   ];
 
   const serviceCards = [
-    { icon: Ambulance, title:'Layanan Warga', desc:'Ajukan ambulans darurat atau sampaikan pengaduan BPJS dan bencana melalui satu alur laporan.', action:() => openReport('darurat'), actionLabel:'Buat Laporan', tone:'text-red-300 bg-red-400/10 border-red-300/20' },
+    { icon: Ambulance, title:'Layanan Warga', desc:'Ajukan pengaduan dalam 10 kategori layanan. Semua laporan masuk lebih dulu ke Karang Taruna Kelurahan untuk verifikasi awal.', action:() => openReport('darurat'), actionLabel:'Buat Laporan', tone:'text-red-300 bg-red-400/10 border-red-300/20' },
     { icon: Calendar, title:'Jadwalkan Ambulans', desc:'Ajukan penjemputan terjadwal. Sistem memeriksa ketersediaan ambulans dan pengemudi agar jadwal pelayanan tidak saling berbenturan.', action:() => openReport('terjadwal'), actionLabel:'Pilih Jadwal', tone:'text-cyan-300 bg-cyan-300/10 border-cyan-300/20' },
     { icon: Search, title:'Periksa Status Layanan', desc:'Masukkan kode laporan untuk melihat perkembangan layanan, unit ambulans dan pengemudi yang telah ditugaskan.', action:openTrack, actionLabel:'Periksa Status', tone:'text-blue-300 bg-blue-300/10 border-blue-300/20' },
     { icon: HeartHandshake, title:'Infaq Warga', desc:'Bayar melalui QR atau rekening resmi Siaga Karta, lalu unggah bukti pembayaran untuk diverifikasi.', action:openInfaq, actionLabel:'Dukung Program', tone:'text-emerald-300 bg-emerald-300/10 border-emerald-300/20' },
@@ -451,7 +569,7 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
                 <span className="mt-2 block font-semibold text-cyan-100">Teratur saat dijadwalkan.</span>
               </motion.h1>
               <motion.p initial={{ opacity:0, y:18 }} animate={{ opacity:1, y:0 }} transition={{ duration:.65, delay:.2 }} className="mt-7 max-w-xl text-base font-light leading-8 text-slate-200/90 sm:text-lg">
-                SIAGA KARTA menghubungkan warga dengan layanan ambulans, pelacakan pelayanan, pengaduan BPJS dan bencana melalui alur laporan yang sama, program bantuan sosial, serta infaq yang transparan.
+                SIAGA KARTA menghubungkan warga dengan Karang Taruna Kelurahan, Kecamatan, dan Kota melalui alur pengaduan yang dapat dilacak, termasuk layanan kesehatan, BPJS, ambulans, sosial, keluarga, kebencanaan, dan kategori lainnya.
               </motion.p>
               <motion.div initial={{ opacity:0, y:18 }} animate={{ opacity:1, y:0 }} transition={{ duration:.65, delay:.3 }} className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <button onClick={() => openReport('darurat')} className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-7 py-3.5 text-sm font-bold text-white shadow-xl shadow-red-950/25 transition hover:-translate-y-0.5 hover:bg-red-500"><AlertCircle className="h-4 w-4"/> Butuh Ambulans Darurat</button>
@@ -502,8 +620,8 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
             <div className="relative mx-auto mt-16 max-w-5xl">
               <div className="absolute bottom-10 left-7 top-10 w-px bg-gradient-to-b from-cyan-300/60 via-blue-400/30 to-emerald-300/60 md:left-1/2"/>
               {[
-                { n:'01', title:'Warga mengirim laporan', text:'Isi identitas, kategori, lokasi, dan kebutuhan. Sistem langsung memvalidasi data sebelum laporan diterima.', icon:Send },
-                { n:'02', title:'Petugas menerima antrean', text:'Laporan masuk ke dashboard petugas. Ambulans darurat, jadwal, BPJS, dan bencana dipisahkan berdasarkan kebutuhan proses.', icon:Activity },
+                { n:'01', title:'Warga mengirim laporan', text:'Laporan dapat masuk melalui WhatsApp, RT/RW, datang langsung, telepon, atau Form Online. Gmail warga dicatat untuk pengiriman kode pelacakan.', icon:Send },
+                { n:'02', title:'Kelurahan melakukan verifikasi awal', text:'Karang Taruna Kelurahan menerima pengaduan, mengecek kelengkapan, lalu mengajukannya ke Kecamatan untuk validasi dan cross-check.', icon:Activity },
                 { n:'03', title:'Layanan diproses', text:'Untuk ambulans, sistem memeriksa konflik jadwal unit dan pengemudi. Untuk pengaduan sosial, petugas memperbarui status penanganan.', icon:Ambulance },
                 { n:'04', title:'Warga memantau hasil', text:'Kode laporan digunakan untuk melihat progres sampai layanan selesai. Status berubah tanpa warga harus menanyakan ulang ke petugas.', icon:CheckCircle2 },
               ].map((step,index) => { const Icon=step.icon; const left=index%2===0; return (
@@ -607,31 +725,37 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
           {reportError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{reportError}</div>}
           <FieldGuide label="Kategori laporan" help="Pilih layanan yang paling sesuai agar laporan masuk ke alur petugas yang benar." required>
             <select value={reportCategory} onChange={(e)=>{setReportDirty(true); setReportCategory(e.target.value); setReportError(''); if(e.target.value!=='ambulans') setFormType('darurat');}} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20">
-              <option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option>
+              {REPORT_CATEGORIES.map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </select>
           </FieldGuide>
           {reportCategory === 'ambulans' ? <>
             <div className={`flex items-start gap-3 rounded-2xl border p-4 text-sm ${formType === 'darurat' ? 'border-red-200 bg-red-50 text-red-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
               {formType === 'darurat' ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0"/> : <Clock className="mt-0.5 h-5 w-5 shrink-0"/>}
-              <p>{formType === 'darurat' ? 'Darurat dipakai untuk kebutuhan respons cepat. Pastikan nomor WhatsApp aktif dan lokasi cukup rinci.' : 'Terjadwal membutuhkan waktu jemput dan foto KTP. Sistem akan mengecek benturan jadwal ambulans dan pengemudi.'}</p>
+              <p>{formType === 'darurat' ? 'Darurat dipakai untuk kebutuhan respons cepat. Pastikan nomor HP aktif dan lokasi cukup rinci.' : 'Terjadwal membutuhkan waktu jemput dan foto KTP. Sistem akan mengecek benturan jadwal ambulans dan pengemudi.'}</p>
             </div>
             <div className="flex gap-2 rounded-xl bg-slate-100 p-1.5"><button type="button" onClick={() => { setReportDirty(true); setFormType('darurat'); }} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='darurat'?'bg-white text-red-700 shadow-sm':'text-slate-600 hover:text-slate-900'}`}>Darurat</button><button type="button" onClick={() => { setReportDirty(true); setFormType('terjadwal'); }} className={`flex-1 rounded-lg py-2 text-sm font-bold ${formType==='terjadwal'?'bg-white text-blue-700 shadow-sm':'text-slate-600 hover:text-slate-900'}`}>Terjadwal</button></div>
-          </> : <div className={`rounded-2xl border p-4 text-sm leading-6 ${reportCategory==='bpjs'?'border-blue-200 bg-blue-50 text-blue-900':'border-amber-200 bg-amber-50 text-amber-900'}`}>{reportCategory==='bpjs'?'Pengaduan BPJS diproses petugas tanpa penugasan ambulans. Jelaskan masalah administrasi atau layanan secara spesifik.':'Laporan bencana diproses petugas tanpa penugasan ambulans otomatis. Cantumkan lokasi, kondisi warga, dan kebutuhan mendesak.'}</div>}
+          </> : <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-900">Pengaduan {categoryLabel(reportCategory)} akan masuk terlebih dahulu ke Karang Taruna Kelurahan, kemudian divalidasi Kecamatan sebelum dimonitor Karang Taruna Kota.</div>}
 
           <div><h3 className="mb-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700">Identitas Pelapor</h3><div className="grid gap-5 sm:grid-cols-2">
             <FieldGuide label="Nama lengkap" help="Nama pelapor yang dapat dikonfirmasi petugas." required><input name="name" required minLength={3} autoComplete="name" placeholder="Contoh: Budi Santoso" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
-            <FieldGuide label="No. WhatsApp" help="Gunakan nomor Indonesia aktif, contoh 081234567890." required><input name="phone" required type="tel" inputMode="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
-            <FieldGuide label="NIK 16 digit" help="Dipakai untuk validasi identitas dasar. NIK tidak ditampilkan kembali di portal publik." required className="sm:col-span-2"><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} autoComplete="off" placeholder="16 digit angka" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label="No. HP / WhatsApp Aktif" help="Nomor ini digunakan petugas untuk konfirmasi lapangan." required><input name="phone" required type="tel" inputMode="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label="Gmail / email warga" help="Kode pelacakan dan notifikasi penerimaan dikirim ke alamat email ini." required><input name="email" required type="email" autoComplete="email" placeholder="nama@gmail.com" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label="Kelurahan" help="Pilih wilayah tempat pengaduan ditangani pertama kali." required><select name="region_id" required className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"><option value="">Pilih kelurahan</option>{publicRegions.map(r=><option key={r.id} value={r.id}>{r.name} · Kec. {r.parent?.name||'-'}</option>)}</select></FieldGuide>
+            <FieldGuide label="Prioritas" help="Darurat, prioritas, dan reguler terpisah dari kategori pengaduan." required><select name="priority" value={reportPriority} onChange={e=>setReportPriority(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900">{REPORT_PRIORITIES.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></FieldGuide>
+            <FieldGuide label="NIK 16 digit" help="Dipakai untuk validasi identitas dasar. NIK dilindungi dari salin dan tersembunyi secara default." required className="sm:col-span-2"><ProtectedNikInput name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} placeholder="16 digit angka" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
           </div></div>
 
           {reportCategory === 'ambulans' && formType === 'terjadwal' && <FieldGuide label="Foto KTP" help="Format JPG, PNG, atau WEBP. Maksimal 4 MB. File hanya dipakai untuk administrasi layanan terjadwal." required><input name="ktp" required type="file" accept="image/jpeg,image/png,image/webp" className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-700"/></FieldGuide>}
 
           <div><h3 className="mb-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700">Detail Laporan</h3><div className="grid gap-5 sm:grid-cols-2">
-            <FieldGuide label={reportCategory==='ambulans'?'Kondisi / keperluan':'Isi pengaduan / kondisi'} help="Jelaskan inti masalah, kondisi saat ini, dan informasi penting yang perlu diketahui petugas." required className="sm:col-span-2"><textarea name="medical_condition" required minLength={3} rows={3} placeholder={reportCategory==='bpjs'?'Contoh: kepesertaan tidak aktif saat akan berobat...':reportCategory==='bencana'?'Contoh: banjir setinggi 50 cm, 6 keluarga terdampak...':formType==='darurat'?'Contoh: pasien pingsan dan membutuhkan ambulans...':'Contoh: kontrol rumah sakit dan membutuhkan antar jemput...'} className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label={reportCategory==='ambulans'?'Kondisi medis / keperluan ambulans':'Isi pengaduan'} help="Jelaskan inti masalah dan informasi yang diperlukan untuk verifikasi." required className="sm:col-span-2"><textarea name={reportCategory==='ambulans'?'medical_condition':'description'} required minLength={3} rows={3} placeholder={reportCategory==='ambulans'?(formType==='darurat'?'Contoh: pasien pingsan dan membutuhkan ambulans...':'Contoh: kontrol rumah sakit dan membutuhkan antar jemput...'):`Jelaskan pengaduan ${categoryLabel(reportCategory)} secara spesifik...`} className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
             {reportCategory==='ambulans' && formType==='terjadwal' && <FieldGuide label="Waktu penjemputan" help="Pilih waktu di masa mendatang. Jadwal final tetap menunggu pengecekan ketersediaan." required><input name="scheduled_at" required type="datetime-local" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>}
             {reportCategory==='ambulans' && formType==='terjadwal' && <FieldGuide label="Estimasi durasi" help="Perkiraan total waktu ambulans digunakan agar sistem dapat mencegah jadwal bertabrakan." required><select name="service_duration_minutes" defaultValue="120" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></FieldGuide>}
             {reportCategory==='ambulans' && <FieldGuide label="Tujuan" help="Rumah sakit atau lokasi tujuan. Boleh dikosongkan jika belum diketahui." className="sm:col-span-2"><input name="destination" placeholder="Contoh: RSUD Kota" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>}
-            <FieldGuide label={reportCategory==='ambulans'?'Lokasi penjemputan':'Lokasi / alamat terkait'} help="Tulis alamat lengkap dan patokan agar petugas tidak salah lokasi." required className="sm:col-span-2"><textarea name="pickup_location" required minLength={5} rows={3} placeholder="Alamat, RT/RW, kelurahan, dan patokan" className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label={reportCategory==='ambulans'?'Lokasi penjemputan':'Lokasi / alamat terkait'} help={reportCategory==='ambulans'?'Wajib untuk penjemputan ambulans. Tulis alamat lengkap dan patokan.':'Opsional untuk kategori non-ambulans. Isi bila ada lokasi kejadian/objek yang perlu ditindaklanjuti.'} required={reportCategory==='ambulans'} className="sm:col-span-2"><textarea name="pickup_location" required={reportCategory==='ambulans'} minLength={reportCategory==='ambulans'?5:undefined} rows={3} placeholder={reportCategory==='ambulans'?'Alamat penjemputan, RT/RW, kelurahan, dan patokan':'Alamat/lokasi kejadian (opsional)'} className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+            <FieldGuide label="RT" help="Opsional; contoh 01."><input name="rt_number" maxLength={10} placeholder="01" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"/></FieldGuide>
+            <FieldGuide label="RW" help="Opsional; contoh 05."><input name="rw_number" maxLength={10} placeholder="05" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"/></FieldGuide>
+            <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold text-slate-900">Koordinat lokasi pengaduan</p><p className="mt-1 text-xs text-slate-500">Opsional, tetapi sangat membantu marker realtime pada dashboard Kota.</p></div><Button type="button" size="sm" variant="outline" onClick={()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(pos=>{setReportCoords({latitude:String(pos.coords.latitude),longitude:String(pos.coords.longitude)});addToast('Koordinat lokasi berhasil diambil.','success');},()=>addToast('Lokasi perangkat tidak dapat diakses.','error'),{enableHighAccuracy:true,timeout:10000}):addToast('Browser tidak mendukung geolocation.','error')}><MapPin className="mr-2 h-4 w-4"/>Ambil Lokasi</Button></div>{reportCoords.latitude&&<p className="mt-3 font-mono text-xs text-slate-700">{reportCoords.latitude}, {reportCoords.longitude}</p>}</div>
           </div></div>
           <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" onClick={closeReport}>Batal</Button><Button disabled={submitting} type="submit" variant={reportCategory==='ambulans'&&formType==='darurat'?'danger':'primary'}>{submitting?'Mengirim...':reportCategory==='ambulans'?(formType==='darurat'?'Kirim Permintaan Darurat':'Ajukan Penjadwalan'):'Kirim Pengaduan'}</Button></div>
         </form>
@@ -640,30 +764,30 @@ const PublicView = ({ setRole, db, publicStats, addToast }) => {
       <ModalForm isOpen={showTrack} onClose={() => { setShowTrack(false); setTrackError(''); }} title="Periksa Status Layanan">
         <div className="space-y-5 text-slate-900">
           <p className="text-sm leading-6 text-slate-600">Masukkan kode laporan yang diberikan setelah pengajuan. Fitur pemeriksaan status pada navigasi, bagian utama, dan daftar layanan menggunakan alur data yang sama.</p>
-          <FieldGuide label="Kode laporan" help="Contoh: LPR-20260813-ABC123DEFG. Kode akan dinormalisasi otomatis saat ditempel.">
+          <FieldGuide label="Kode laporan" help="Contoh: SKB-ANDIR-2026-00001. Kode juga dikirim ke Gmail warga.">
             <div className="flex flex-col gap-3 sm:flex-row">
-              <input value={trackCode} onChange={(e)=>{setTrackCode(normalizeTrackingCode(e.target.value));setTrackError('');}} onKeyDown={(e)=>{if(e.key==='Enter'){e.preventDefault();handleTrack();}}} placeholder="LPR / JDL / BPJ / BNC - kode laporan" autoCapitalize="characters" spellCheck={false} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm font-semibold text-slate-950 caret-slate-950 outline-none placeholder:text-slate-500 focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/>
+              <input value={trackCode} onChange={(e)=>{setTrackCode(normalizeTrackingCode(e.target.value));setTrackError('');}} onKeyDown={(e)=>{if(e.key==='Enter'){e.preventDefault();handleTrack();}}} placeholder="SKB-ANDIR-2026-00001" autoCapitalize="characters" spellCheck={false} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm font-semibold text-slate-950 caret-slate-950 outline-none placeholder:text-slate-500 focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/>
               <Button type="button" disabled={trackLoading} onClick={handleTrack}><Search className="mr-2 h-4 w-4"/>{trackLoading?'Memeriksa...':'Periksa'}</Button>
             </div>
           </FieldGuide>
           {trackError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{trackError}</div>}
-          {trackResult && <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5"><div className="grid gap-4 text-sm sm:grid-cols-2"><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</div><div className="mt-1 font-mono font-bold text-slate-900">{trackResult.code}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</div><div className="mt-1 font-bold uppercase text-cyan-900">{statusLabel(trackResult.status)}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori</div><div className="mt-1 font-semibold uppercase text-slate-900">{categoryLabel(trackResult.category)}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</div><div className="mt-1 font-semibold text-slate-900">{serviceTypeLabel(trackResult.type)}</div></div>{trackResult.scheduled_at && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</div><div className="mt-1 font-semibold text-slate-900">{new Date(trackResult.scheduled_at).toLocaleString('id-ID')}</div></div>}{trackResult.ambulance && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</div><div className="mt-1 font-semibold text-slate-900">{trackResult.ambulance}</div></div>}{trackResult.driver && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Pengemudi</div><div className="mt-1 font-semibold text-slate-900">{trackResult.driver}</div></div>}</div></div>}
+          {trackResult && <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5"><div className="grid gap-4 text-sm sm:grid-cols-2"><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</div><div className="mt-1 font-mono font-bold text-slate-900">{trackResult.code}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</div><div className="mt-1 font-bold uppercase text-cyan-900">{statusLabel(trackResult.status)}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori</div><div className="mt-1 font-semibold text-slate-900">{categoryLabel(trackResult.category)}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Tahapan</div><div className="mt-1 font-semibold text-slate-900">{workflowLabel(trackResult.workflow_status)}</div></div>{trackResult.kelurahan&&<div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Wilayah</div><div className="mt-1 font-semibold text-slate-900">{trackResult.kelurahan} · Kec. {trackResult.kecamatan}</div></div>}<div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</div><div className="mt-1 font-semibold text-slate-900">{serviceTypeLabel(trackResult.type)}</div></div>{trackResult.scheduled_at && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</div><div className="mt-1 font-semibold text-slate-900">{new Date(trackResult.scheduled_at).toLocaleString('id-ID')}</div></div>}{trackResult.ambulance && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</div><div className="mt-1 font-semibold text-slate-900">{trackResult.ambulance}</div></div>}{trackResult.driver && <div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Pengemudi</div><div className="mt-1 font-semibold text-slate-900">{trackResult.driver}</div></div>}</div></div>}
         </div>
       </ModalForm>
 
       <ModalForm isOpen={showSuccess} onClose={() => setShowSuccess(false)} title="Laporan Berhasil Dikirim">
-        <div className="py-4 text-center"><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-10 w-10"/></div><h3 className="mt-5 text-2xl font-black text-slate-900">Simpan kode laporan Anda</h3><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">Gunakan kode ini untuk memantau status pelayanan. Jangan membagikannya kepada pihak yang tidak berkepentingan.</p><div className="mx-auto mt-6 max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5 font-mono text-lg font-black tracking-wider text-slate-900 sm:text-2xl">{trackCode}</div><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => setShowSuccess(false)}>Tutup</Button><Button onClick={() => { setShowSuccess(false); openTrack(); }}>Periksa Status Sekarang</Button></div></div>
+        <div className="py-4 text-center"><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-10 w-10"/></div><h3 className="mt-5 text-2xl font-black text-slate-900">Simpan kode laporan Anda</h3><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">Kode ini juga dikirim ke Gmail warga. Gunakan kode untuk memantau alur Kelurahan → Kecamatan → Kota dan jangan membagikannya kepada pihak yang tidak berkepentingan.</p><div className="mx-auto mt-6 max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5 font-mono text-lg font-black tracking-wider text-slate-900 sm:text-2xl">{trackCode}</div><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => setShowSuccess(false)}>Tutup</Button><Button onClick={() => { setShowSuccess(false); openTrack(); }}>Periksa Status Sekarang</Button></div></div>
       </ModalForm>
 
       <ModalForm isOpen={showInfaq} onClose={() => { setShowInfaq(false); setInfaqCode(''); setInfaqError(''); }} title={infaqInfo.title || 'Infaq Siaga Karta'}>
         {!infaqInfo.active ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-800">Pembayaran infaq belum diaktifkan oleh pengelola.</div> : <div className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">{infaqInfo.has_qr ? <img src={infaqInfo.qr_url} alt="QR pembayaran infaq SIAGA KARTA" className="mx-auto aspect-square w-full max-w-[280px] rounded-xl object-contain"/> : <div className="flex aspect-square items-center justify-center text-slate-400"><QrCode className="h-20 w-20"/></div>}<p className="mt-3 text-xs text-slate-500">Gunakan QR atau rekening resmi yang tersedia.</p></div><div>{infaqInfo.bank_name && infaqInfo.account_number && <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Transfer Bank</div><div className="mt-2 font-bold text-slate-950">{infaqInfo.bank_name}</div><div className="mt-1 flex items-center gap-2"><code className="rounded bg-white px-2 py-1 text-sm font-black text-slate-950">{infaqInfo.account_number}</code><button type="button" onClick={()=>navigator.clipboard?.writeText(infaqInfo.account_number).then(()=>addToast('Nomor rekening disalin.','success')).catch(()=>{})} className="text-xs font-bold text-blue-700">Salin</button></div><div className="mt-1 text-xs text-slate-600">a.n. {infaqInfo.account_name}</div></div>}<p className="text-sm leading-7 text-slate-600">{infaqInfo.description}</p>{infaqInfo.payment_instructions && <div className="mt-4 whitespace-pre-line rounded-xl bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">{infaqInfo.payment_instructions}</div>}</div></div>
-          {infaqCode ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600"/><div className="mt-2 font-bold text-emerald-900">Bukti pembayaran diterima</div><div className="mt-2 font-mono text-sm text-emerald-900">{infaqCode}</div><div className="mt-2 text-xs text-emerald-700">Pembayaran akan tercatat pada kas setelah diverifikasi Admin atau Petugas Karang Taruna.</div></div> : <form onSubmit={handleInfaqSubmit} className="space-y-5">
+          {infaqCode ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600"/><div className="mt-2 font-bold text-emerald-900">Bukti pembayaran diterima</div><div className="mt-2 font-mono text-sm text-emerald-900">{infaqCode}</div><div className="mt-2 text-xs text-emerald-700">Pembayaran akan tercatat pada kas setelah diverifikasi pengelola SIAGA KARTA.</div></div> : <form onSubmit={handleInfaqSubmit} className="space-y-5">
             <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true"/>
             {infaqError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{infaqError}</div>}
             <div className="grid gap-5 sm:grid-cols-2">
               <FieldGuide label="Nama pembayar" help="Nama yang digunakan untuk pencatatan transaksi infaq." required><input name="payer_name" required minLength={3} placeholder="Nama lengkap" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
-              <FieldGuide label="No. WhatsApp" help="Nomor aktif untuk verifikasi jika ada kendala pada bukti pembayaran." required><input name="payer_phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
+              <FieldGuide label="No. HP Aktif" help="Nomor aktif untuk verifikasi jika ada kendala pada bukti pembayaran." required><input name="payer_phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
               <FieldGuide label="Nominal infaq" help="Minimal Rp1.000. Isi angka tanpa titik atau koma." required className="sm:col-span-2"><input name="amount" required type="number" min="1000" placeholder="Contoh: 50000" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
               <FieldGuide label="Catatan" help="Opsional. Bisa diisi tujuan atau pesan singkat untuk pencatatan." className="sm:col-span-2"><textarea name="description" rows={2} placeholder="Catatan opsional" className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
               <FieldGuide label="Bukti pembayaran" help="Upload JPG, PNG, atau WEBP maksimal 5 MB. Bukti yang sama tidak dapat dikirim dua kali." required className="sm:col-span-2"><input name="payment_proof" required type="file" accept="image/jpeg,image/png,image/webp" className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-700"/></FieldGuide>
@@ -701,10 +825,10 @@ const Login = ({ setRole, addToast, onLogin, demo }) => {
     </div>
     <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 relative bg-white">
       <div className="absolute top-6 right-6"><button onClick={() => setRole('warga')} className="px-5 py-2.5 bg-slate-50 text-slate-600 text-sm font-bold rounded-full border border-slate-200">Kembali ke Portal Warga</button></div>
-      <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Administrasi SIAGA KARTA</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun Admin atau Petugas Karang Taruna yang telah terdaftar.</p>
+      <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Administrasi SIAGA KARTA</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun Kota, Kecamatan, atau Kelurahan yang telah terdaftar.</p>
         <form className="space-y-5" onSubmit={handleLogin}>
-          {demo?.enabled && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-slate-900"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Akun Demo</div><p className="mt-1 text-xs leading-5 text-slate-600">Akun demo yang sama berlaku pada localhost maupun Cloudflare. Pilih akun demo untuk mengisi formulir masuk secara otomatis.</p><div className="mt-3 grid grid-cols-2 gap-2">{(demo.usernames||['admin','petugas']).map(username=><button key={username} type="button" onClick={()=>{setLoginValue(username);setPasswordValue(demo.password||'');}} className="rounded-xl border border-blue-200 bg-white px-2 py-2 text-xs font-black capitalize text-blue-800 hover:bg-blue-100">{username}</button>)}</div></div>}
-          <FieldGuide label="Email atau Nama Pengguna" help="Gunakan akun resmi Admin atau Petugas Karang Taruna yang telah terdaftar." required><input name="login" required autoComplete="username" value={loginValue} onChange={e=>setLoginValue(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /></FieldGuide>
+          {demo?.enabled && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-slate-900"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Akun Demo</div><p className="mt-1 text-xs leading-5 text-slate-600">Akun demo yang sama berlaku pada localhost maupun Cloudflare. Pilih akun demo untuk mengisi formulir masuk secara otomatis.</p><div className="mt-3 grid grid-cols-2 gap-2">{(demo.usernames||['kota','kecamatan','kelurahan']).map(username=><button key={username} type="button" onClick={()=>{setLoginValue(username);setPasswordValue(demo.password||'');}} className="rounded-xl border border-blue-200 bg-white px-2 py-2 text-xs font-black capitalize text-blue-800 hover:bg-blue-100">{username}</button>)}</div></div>}
+          <FieldGuide label="Email atau Nama Pengguna" help="Gunakan akun resmi Kota, Kecamatan, atau Kelurahan yang telah terdaftar." required><input name="login" required autoComplete="username" value={loginValue} onChange={e=>setLoginValue(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /></FieldGuide>
           <FieldGuide label="Kata Sandi" help={demo?.enabled?'Kata sandi demo otomatis terisi setelah memilih akun.':'Masukkan kata sandi akun Anda. Tombol mata hanya mengubah tampilan dan tidak menyimpan kata sandi.'} required><div className="relative"><input name="password" required minLength={8} value={passwordValue} onChange={e=>setPasswordValue(e.target.value)} type={showPassword?'text':'password'} autoComplete="current-password" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /><button type="button" aria-label={showPassword?'Sembunyikan kata sandi':'Tampilkan kata sandi'} onClick={()=>setShowPassword(v=>!v)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500"><Eye className="w-5 h-5"/></button></div></FieldGuide>
           <button disabled={loading} type="submit" className="w-full py-4 bg-[#0b3b78] hover:bg-[#092f61] text-white rounded-xl font-bold disabled:opacity-50">{loading?'Memverifikasi...':'Masuk ke Dashboard'}</button>
         </form>
@@ -762,10 +886,10 @@ const NotificationBell = ({ addToast }) => {
   </div>;
 };
 
-const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard, setRole, addToast, requestConfirm }) => {
-  const allowedMenus = role==='admin'
+const DashboardLayout = ({ role, currentUser, db, dashboardStats, updateDB, refreshDashboard, setRole, addToast, requestConfirm }) => {
+  const allowedMenus = role==='kota'
     ? ['dashboard','pelayanan','ambulans','kas','laporan','users']
-    : ['dashboard','pelayanan','ambulans','kas','laporan'];
+    : ['dashboard','pelayanan'];
   const [activeMenu, setActiveMenu] = useState(() => {
     const saved=sessionStorage.getItem(`siagakarta_menu_${role}`) || 'dashboard';
     return allowedMenus.includes(saved)?saved:'dashboard';
@@ -789,13 +913,13 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
 
   const renderContent = () => {
     switch(activeMenu) {
-      case 'dashboard': return <ViewDashboard db={db} role={role} stats={dashboardStats} />;
+      case 'dashboard': return <ViewDashboard db={db} role={role} stats={dashboardStats} addToast={addToast} />;
       case 'pelayanan': return <ViewPelayanan db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} requestConfirm={requestConfirm} />;
       case 'ambulans': return <ViewAmbulans db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} />;
       case 'kas': return <ViewKas db={db} refreshDashboard={refreshDashboard} role={role} addToast={addToast} />;
       case 'users': return <ViewUsers addToast={addToast} />;
       case 'laporan': return <ViewLaporan addToast={addToast} role={role} />;
-      default: return <ViewDashboard db={db} role={role} stats={dashboardStats} />;
+      default: return <ViewDashboard db={db} role={role} stats={dashboardStats} addToast={addToast} />;
     }
   };
   const chooseMenu=(id)=>{
@@ -812,7 +936,7 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
   const logout=()=>requestConfirm('Logout','Yakin ingin keluar dari sistem?','Logout','Batal',async()=>{
     try{await api.post('/auth/logout');}catch{}finally{setToken(null);setRole('warga');addToast('Berhasil logout','info');}
   });
-  const roleLabel=role==='admin'?'Admin':'Petugas Karang Taruna';
+  const roleLabel=roleDisplay(role);
   const sidebarContent = (mobile=false) => <>
     <div className="flex items-center justify-between px-5 mb-8">
       <div className={`flex items-center gap-3 overflow-hidden whitespace-nowrap ${!mobile && desktopCompact ? 'lg:w-0 lg:opacity-0' : ''}`}>
@@ -830,203 +954,272 @@ const DashboardLayout = ({ role, db, dashboardStats, updateDB, refreshDashboard,
   </>;
 
   return <div className="min-h-[100dvh] bg-[#050b1c] lg:flex font-sans overflow-hidden">
-    {mobileOpen && <button aria-label="Tutup menu" className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={()=>setMobileOpen(false)}/>} 
+    {mobileOpen && <button aria-label="Tutup menu" className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={()=>setMobileOpen(false)}/>}
     <aside className={`fixed inset-y-0 left-0 z-50 w-72 py-6 flex flex-col bg-[#07132f] transition-transform lg:hidden ${mobileOpen?'translate-x-0':'-translate-x-full'}`}>{sidebarContent(true)}</aside>
     <aside className={`hidden lg:flex ${desktopCompact?'w-20':'w-64'} py-8 flex-col shrink-0 bg-gradient-to-b from-[#07132f] via-[#081a3d] to-[#050b1c] transition-all duration-300`}>{sidebarContent(false)}</aside>
     <main className="min-w-0 flex-1 flex flex-col h-[100dvh] overflow-hidden bg-[#f5f8ff] lg:rounded-l-3xl lg:shadow-[-10px_0_30px_rgba(0,0,0,0.2)]">
       <header className="min-h-16 sm:min-h-20 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 border-b border-blue-100 bg-white/90 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{navMap[activeMenu]?.label || 'Beranda'}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">Portal {roleLabel} · sinkronisasi aktif</p></div></div>
-        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-blue-100 text-[#0b3b78] flex items-center justify-center font-black border border-blue-200 shrink-0">{role==='admin'?'AD':'KT'}</div></div>
+        <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{navMap[activeMenu]?.label || 'Beranda'}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">Karang Taruna tingkat {roleLabel}{currentUser?.region?.name?` · ${currentUser.region.name}`:''} · sinkronisasi aktif</p></div></div>
+        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-blue-100 text-[#0b3b78] flex items-center justify-center font-black border border-blue-200 shrink-0">{role==='kota'?'KO':role==='kecamatan'?'KC':'KL'}</div></div>
       </header>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 hide-scroll"><DashboardErrorBoundary resetKey={activeMenu}><motion.div key={activeMenu} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{duration:.22,ease:'easeOut'}} className="min-h-full">{renderContent()}</motion.div></DashboardErrorBoundary></div>
     </main>
   </div>;
 };
 
-const ViewDashboard = ({ db, role, stats }) => {
-  const canFinance=role==='admin'||role==='petugas';
-  const canOperations=role==='admin'||role==='petugas';
+const reportMapColor = (marker) => {
+  if(marker?.priority==='darurat') return '#dc2626';
+  if(marker?.status==='ditolak') return '#0f172a';
+  if(marker?.status==='selesai') return '#94a3b8';
+  return ({bpjs:'#2563eb',ambulans:'#f97316',bantuan_sosial:'#16a34a',lansia_disabilitas:'#7c3aed',kesehatan:'#0891b2',kebencanaan:'#b45309'}[marker?.category] || '#64748b');
+};
+const escapeMapHtml=(value)=>String(value??'').replace(/[&<>"']/g,(ch)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+const normalizeAreaName=(value)=>String(value||'').toUpperCase().replace(/KELURAHAN|DESA|KEL\.|KEC\./g,'').replace(/[^A-Z0-9]/g,'');
+const featureAreaName=(feature)=>{
+  const p=feature?.properties||{};
+  return p.NAMOBJ||p.WADMKD||p.KELURAHAN||p.kelurahan||p.NAMKEL||p.NAMA_KEL||p.NAMAKEL||p.nama_kelurahan||p.DESA_KELURAHAN||p.KEL_DESA||p.DESA||p.NAME_4||p.NAME_3||p.name||p.Name||'';
+};
+
+const KotaMapDashboard = ({ addToast }) => {
+  const [mapData,setMapData]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [filters,setFilters]=useState({category:'',priority:'',kecamatan_id:'',kelurahan_id:'',status:'',date_from:'',date_to:''});
+  const [detail,setDetail]=useState(null);
+  const mapNodeRef=useRef(null);
+  const mapRef=useRef(null);
+  const polygonLayerRef=useRef(null);
+  const markerLayerRef=useRef(null);
+  const geoJsonCacheRef=useRef(null);
+  const latestRequestRef=useRef(0);
+
+  const paramsFromFilters=()=>Object.fromEntries(Object.entries(filters).filter(([,v])=>v!==''));
+  const loadMapData=async({silent=false}={})=>{
+    const rid=++latestRequestRef.current;
+    if(!silent)setLoading(true);
+    try{
+      const {data}=await api.get('/dashboard/kota/map',{params:{...paramsFromFilters(),marker_limit:2500,_ts:Date.now()}});
+      if(rid!==latestRequestRef.current)return;
+      setMapData(data);setError('');
+    }catch(err){if(rid===latestRequestRef.current){const msg=errorMessage(err);setError(msg);if(!silent)addToast?.(msg,'error');}}
+    finally{if(rid===latestRequestRef.current&&!silent)setLoading(false);}
+  };
+
+  useEffect(()=>{loadMapData();},[filters.category,filters.priority,filters.kecamatan_id,filters.kelurahan_id,filters.status,filters.date_from,filters.date_to]);
+  useEffect(()=>{
+    const refresh=()=>loadMapData({silent:true});
+    window.addEventListener('siagakarta:dashboard-refreshed',refresh);
+    return()=>window.removeEventListener('siagakarta:dashboard-refreshed',refresh);
+  },[filters]);
+
+  const loadVillageDetail=async(regionId,fallback)=>{
+    if(!regionId){setDetail(fallback||null);return;}
+    try{const {data}=await api.get(`/dashboard/kota/kelurahan/${regionId}`,{params:paramsFromFilters()});setDetail(data.kelurahan);}catch(err){addToast?.(errorMessage(err),'error');}
+  };
+
+  useEffect(()=>{
+    if(!mapData||!mapNodeRef.current)return;
+    let cancelled=false;
+    const draw=async()=>{
+      let attempts=0;
+      while(!window.L&&attempts<30&&!cancelled){await new Promise(r=>setTimeout(r,100));attempts++;}
+      if(cancelled||!window.L)return;
+      const L=window.L;
+      if(!mapRef.current){
+        mapRef.current=L.map(mapNodeRef.current,{zoomControl:true,minZoom:10}).setView([-6.9175,107.6191],12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(mapRef.current);
+      }
+      if(polygonLayerRef.current){mapRef.current.removeLayer(polygonLayerRef.current);polygonLayerRef.current=null;}
+      if(markerLayerRef.current){mapRef.current.removeLayer(markerLayerRef.current);markerLayerRef.current=null;}
+
+      if(!geoJsonCacheRef.current&&mapData.geojson?.url){
+        try{const response=await fetch(mapData.geojson.url,{cache:'force-cache'});if(!response.ok)throw new Error('GeoJSON tidak dapat dimuat');geoJsonCacheRef.current=await response.json();}
+        catch(e){if(!cancelled)setError('Batas wilayah GeoJSON Kota Bandung belum dapat dimuat. Statistik database tetap tersedia.');}
+      }
+      if(cancelled)return;
+      const statsByName=new Map((mapData.kelurahan_stats||[]).flatMap(v=>[[normalizeAreaName(v.name),v],[normalizeAreaName(v.geojson_name),v]].filter(([k])=>k)));
+      if(geoJsonCacheRef.current){
+        polygonLayerRef.current=L.geoJSON(geoJsonCacheRef.current,{
+          style:(feature)=>{
+            const item=statsByName.get(normalizeAreaName(featureAreaName(feature)));
+            const total=Number(item?.total||0);
+            const fillColor=total>=100?'#1e3a8a':total>=50?'#1d4ed8':total>=20?'#3b82f6':total>0?'#93c5fd':'#e2e8f0';
+            return {color:'#475569',weight:.7,fillColor,fillOpacity:.48};
+          },
+          onEachFeature:(feature,layer)=>{
+            const featureName=featureAreaName(feature)||'Kelurahan';
+            const item=statsByName.get(normalizeAreaName(featureName));
+            const categorySummary=(item?.categories||[]).slice(0,3).map(v=>`${escapeMapHtml(categoryLabel(v.category))}: ${Number(v.percentage||0).toLocaleString('id-ID')}%`).join('<br>');
+            layer.bindTooltip(`<strong>${escapeMapHtml(item?.name||featureName)}</strong><br>Total pengaduan: ${Number(item?.total||0).toLocaleString('id-ID')}${categorySummary?`<br>${categorySummary}`:''}`,{sticky:true});
+            layer.on('click',()=>loadVillageDetail(item?.id,item||{name:featureName,total:0,categories:[],latest:[]}));
+          }
+        }).addTo(mapRef.current);
+        try{if(polygonLayerRef.current.getBounds().isValid())mapRef.current.fitBounds(polygonLayerRef.current.getBounds(),{padding:[10,10],maxZoom:13});}catch{}
+      }
+
+      const markerLayer=typeof L.markerClusterGroup==='function'?L.markerClusterGroup({chunkedLoading:true,showCoverageOnHover:false,maxClusterRadius:45}):L.layerGroup();
+      (mapData.markers||[]).forEach(marker=>{
+        const lat=Number(marker.latitude),lng=Number(marker.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+        const pin=L.circleMarker([lat,lng],{radius:7,color:'#fff',weight:2,fillColor:reportMapColor(marker),fillOpacity:.95});
+        pin.bindPopup(`<div style="min-width:220px"><strong>${escapeMapHtml(marker.id)}</strong><br>${escapeMapHtml(categoryLabel(marker.category))} · ${escapeMapHtml(priorityLabel(marker.priority))}<br>Status: ${escapeMapHtml(statusLabel(marker.status))}<br>Alur: ${escapeMapHtml(workflowLabel(marker.workflow_status))}<br>${escapeMapHtml(marker.kelurahan||'-')}, ${escapeMapHtml(marker.kecamatan||'-')}<br>${escapeMapHtml(marker.location||'-')}<br><small>${escapeMapHtml(new Date(marker.time).toLocaleString('id-ID'))}<br>${lat.toFixed(6)}, ${lng.toFixed(6)}</small></div>`);
+        markerLayer.addLayer(pin);
+      });
+      markerLayer.addTo(mapRef.current);markerLayerRef.current=markerLayer;
+      setTimeout(()=>mapRef.current?.invalidateSize(),50);
+    };
+    draw();
+    return()=>{cancelled=true;};
+  },[mapData]);
+
+  useEffect(()=>()=>{if(mapRef.current){mapRef.current.remove();mapRef.current=null;}},[]);
+  const stat=mapData?.stats||{};
+  const districts=mapData?.filters?.kecamatan||[];
+  const villages=(mapData?.filters?.kelurahan||[]).filter(v=>!filters.kecamatan_id||String(v.parent_id)===String(filters.kecamatan_id));
+  const statCards=[
+    ['Total Pengaduan Kota Bandung',stat.total||0],['Pengaduan Hari Ini',stat.today||0],['Dalam Proses',stat.processing||0],['Selesai',stat.completed||0],
+    ['Pengaduan Darurat',stat.emergency||0],['Kelurahan Terbanyak',`${stat.top_kelurahan||'-'}${stat.top_kelurahan_total?` · ${stat.top_kelurahan_total}`:''}`],['Kategori Terbanyak',`${categoryLabel(stat.top_category)}${stat.top_category_total?` · ${stat.top_category_total}`:''}`]
+  ];
+  const chartColors=['#2563eb','#f97316','#16a34a','#7c3aed','#0891b2','#dc2626','#64748b','#0f766e','#a16207','#334155'];
+
+  return <div className="space-y-6">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-blue-700">Monitoring realtime tingkat Kota</p><h2 className="mt-1 text-2xl font-black text-slate-950">Peta Sebaran Pengaduan Kota Bandung</h2><p className="mt-1 text-sm text-slate-600">Marker, statistik kelurahan, dan persentase dihitung dari database. Pembaruan mengikuti sinkronisasi sistem tanpa refresh browser.</p></div><Button size="sm" variant="outline" disabled={loading} onClick={()=>loadMapData()}><RefreshCw className={`mr-2 h-4 w-4 ${loading?'animate-spin':''}`}/>Sinkronkan</Button></div>
+    <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">{statCards.map(([label,value])=><Card key={label} className="p-4"><div className="text-xs font-bold leading-5 text-slate-500">{label}</div><div className="mt-2 text-xl font-black text-slate-950 break-words">{typeof value==='number'?value.toLocaleString('id-ID'):value}</div></Card>)}</div>
+    <Card className="p-4 sm:p-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"><option value="">Semua kategori</option>{REPORT_CATEGORIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+        <select value={filters.priority} onChange={e=>setFilters(f=>({...f,priority:e.target.value}))} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"><option value="">Semua prioritas</option>{REPORT_PRIORITIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+        <select value={filters.kecamatan_id} onChange={e=>setFilters(f=>({...f,kecamatan_id:e.target.value,kelurahan_id:''}))} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"><option value="">Semua kecamatan</option>{districts.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select>
+        <select value={filters.kelurahan_id} onChange={e=>setFilters(f=>({...f,kelurahan_id:e.target.value}))} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"><option value="">Semua kelurahan</option>{villages.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select>
+        <select value={filters.status} onChange={e=>setFilters(f=>({...f,status:e.target.value}))} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"><option value="">Semua status</option><option value="menunggu">Menunggu</option><option value="diproses">Diproses</option><option value="dijemput">Dijemput</option><option value="selesai">Selesai</option><option value="ditolak">Ditolak</option></select>
+        <button type="button" onClick={()=>setFilters({category:'',priority:'',kecamatan_id:'',kelurahan_id:'',status:'',date_from:'',date_to:''})} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Reset filter</button>
+      </div><div className="mt-3 grid gap-3 sm:grid-cols-2"><FieldGuide label="Dari tanggal"><input type="date" value={filters.date_from} onChange={e=>setFilters(f=>({...f,date_from:e.target.value}))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"/></FieldGuide><FieldGuide label="Sampai tanggal"><input type="date" value={filters.date_to} onChange={e=>setFilters(f=>({...f,date_to:e.target.value}))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"/></FieldGuide></div>
+    </Card>
+    {error&&<div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">{error}</div>}
+    {Number(stat.unmapped_reports||0)>0&&<div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950"><b>{Number(stat.unmapped_reports).toLocaleString('id-ID')} pengaduan historis belum memiliki relasi Kelurahan.</b> Data tersebut tetap tersimpan, tetapi tidak ditempatkan ke peta sampai wilayahnya dilengkapi. Sistem tidak menebak wilayah secara otomatis.</div>}
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+      <Card noPadding className="relative min-h-[560px] overflow-hidden"><div ref={mapNodeRef} className="h-[560px] w-full bg-slate-100"/>{loading&&<div className="absolute inset-0 z-[500] flex items-center justify-center bg-white/55 backdrop-blur-[1px]"><div className="rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow">Memuat data peta...</div></div>}<div className="absolute bottom-3 left-3 z-[500] rounded-xl bg-white/95 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow">Marker: {(mapData?.markers||[]).length.toLocaleString('id-ID')} / {(mapData?.marker_count||0).toLocaleString('id-ID')}{mapData?.markers_truncated?' · clustering + batas performa aktif':''}</div><div className="absolute right-3 top-3 z-[500] hidden max-w-[230px] rounded-xl border border-slate-200 bg-white/95 p-3 text-[10px] font-semibold text-slate-700 shadow-lg backdrop-blur sm:block"><div className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-900">Legenda marker</div><div className="grid grid-cols-2 gap-x-3 gap-y-1.5">{[['#dc2626','Darurat'],['#2563eb','BPJS'],['#f97316','Ambulans'],['#16a34a','Bantuan Sosial'],['#7c3aed','Disabilitas/Lansia'],['#94a3b8','Selesai'],['#0f172a','Ditolak'],['#64748b','Kategori lain']].map(([color,label])=><div key={label} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white shadow" style={{backgroundColor:color}}/><span>{label}</span></div>)}</div><div className="mt-3 border-t border-slate-200 pt-2 text-[9px] leading-4 text-slate-500">Warna area menunjukkan kepadatan pengaduan kelurahan: semakin gelap, semakin tinggi jumlah pengaduan pada filter aktif.</div></div></Card>
+      <Card className="min-h-[560px]"><div className="flex items-center gap-3"><div className="rounded-xl bg-blue-50 p-2 text-blue-700"><Building2 className="h-5 w-5"/></div><div><h3 className="font-black text-slate-950">Detail Kelurahan</h3><p className="text-xs text-slate-500">Klik batas kelurahan pada peta.</p></div></div>{detail?<div className="mt-5 space-y-5"><div><div className="text-xl font-black text-slate-950">{detail.name}</div><div className="text-sm text-slate-500">{detail.kecamatan?`Kecamatan ${detail.kecamatan}`:'Wilayah Kota Bandung'}</div><div className="mt-3 text-3xl font-black text-blue-800">{Number(detail.total||0).toLocaleString('id-ID')}</div><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Total pengaduan</div></div><div className="overflow-hidden rounded-xl border border-slate-200"><table className="w-full text-xs"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Kategori</th><th className="p-2 text-right">Jumlah</th><th className="p-2 text-right">%</th></tr></thead><tbody>{(detail.categories||[]).length?(detail.categories||[]).map(v=><tr key={v.category} className="border-t border-slate-100"><td className="p-2 font-semibold text-slate-800">{categoryLabel(v.category)}</td><td className="p-2 text-right">{v.total}</td><td className="p-2 text-right font-bold">{v.percentage}%</td></tr>):<tr><td colSpan={3} className="p-4 text-center text-slate-500">Belum ada pengaduan pada filter ini.</td></tr>}</tbody></table></div>{detail.rt_count!=null&&<div className="rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-700">Struktur lokal: {detail.rt_count} RT · {detail.rw_count} RW</div>}<div><div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-500">Pengaduan terbaru</div><div className="space-y-2 max-h-52 overflow-y-auto">{(detail.latest||[]).length?(detail.latest||[]).map(v=><div key={v.code||v.id} className="rounded-xl border border-slate-100 p-3"><div className="font-mono text-xs font-black text-slate-900">{v.code||v.id}</div><div className="mt-1 text-xs text-slate-600">{categoryLabel(v.category)} · {workflowLabel(v.workflow_status)}</div></div>):<p className="text-xs text-slate-500">Belum ada data terbaru.</p>}</div></div></div>:<div className="mt-8 rounded-2xl bg-slate-50 p-6 text-center text-sm leading-6 text-slate-500">Klik salah satu wilayah kelurahan untuk melihat jumlah, persentase kategori, dan laporan terbaru.</div>}</Card>
+    </div>
+    <div className="grid gap-6 lg:grid-cols-2"><Card><h3 className="font-black text-slate-950">Distribusi Pengaduan Kota Bandung</h3><div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={mapData?.category_distribution||[]} dataKey="total" nameKey="category" innerRadius={52} outerRadius={90} paddingAngle={2}>{(mapData?.category_distribution||[]).map((v,i)=><Cell key={v.category} fill={chartColors[i%chartColors.length]}/>)}</Pie><RechartsTooltip formatter={(value,name,item)=>[`${value} (${item?.payload?.percentage||0}%)`,categoryLabel(item?.payload?.category)]}/></PieChart></ResponsiveContainer></div><div className="grid grid-cols-2 gap-2 text-xs">{(mapData?.category_distribution||[]).map((v,i)=><div key={v.category} className="flex items-center justify-between rounded-lg bg-slate-50 p-2"><span>{categoryLabel(v.category)}</span><b>{v.percentage}%</b></div>)}</div></Card><Card><h3 className="font-black text-slate-950">Top 5 Kelurahan dengan Pengaduan Terbanyak</h3><div className="mt-4 h-80"><ResponsiveContainer width="100%" height="100%"><BarChart data={mapData?.top_kelurahan||[]} layout="vertical" margin={{left:30,right:20}}><CartesianGrid strokeDasharray="3 3" horizontal={false}/><XAxis type="number" allowDecimals={false}/><YAxis type="category" dataKey="name" width={105} tick={{fontSize:11}}/><RechartsTooltip/><Bar dataKey="total" fill="#0b3b78" radius={[0,8,8,0]}/></BarChart></ResponsiveContainer></div></Card></div>
+  </div>;
+};
+
+const KelurahanStructureCard=({stats,addToast})=>{
+  const region=stats?.region;
+  const [rt,setRt]=useState(region?.rt_count??11);const [rw,setRw]=useState(region?.rw_count??11);const [saving,setSaving]=useState(false);
+  useEffect(()=>{setRt(region?.rt_count??11);setRw(region?.rw_count??11);},[region?.id,region?.rt_count,region?.rw_count]);
+  if(!region?.id)return null;
+  const save=async()=>{setSaving(true);try{const {data}=await api.patch(`/regions/${region.id}/local-structure`,{rt_count:Number(rt),rw_count:Number(rw)});addToast?.(data.message||'Struktur RT/RW diperbarui.','success');}catch(e){addToast?.(errorMessage(e),'error');}finally{setSaving(false);}};
+  return <Card><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="font-black text-slate-950">Struktur Wilayah Kelurahan</h3><p className="mt-1 text-sm text-slate-600">Default pilot adalah 11 RT dan 11 RW. Pengelola Kelurahan dapat menyesuaikan jumlahnya sendiri.</p></div><div className="grid grid-cols-2 gap-3 sm:w-72"><FieldGuide label="Jumlah RT"><input type="number" min="0" max="999" value={rt} onChange={e=>setRt(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900"/></FieldGuide><FieldGuide label="Jumlah RW"><input type="number" min="0" max="999" value={rw} onChange={e=>setRw(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900"/></FieldGuide></div><Button disabled={saving} onClick={save}>{saving?'Menyimpan...':'Simpan Struktur'}</Button></div></Card>;
+};
+
+const ViewDashboard = ({ db, role, stats, addToast }) => {
+  const canFinance=role==='kota';
+  const canOperations=STAFF_ROLES.includes(role);
   const liveChart=stats?.daily?.length ? stats.daily : emptyChartData;
   const pendingFinance=db.transaksi.filter(t=>t.status==='pending').length;
   const actionLabel=(action='')=>action.replaceAll('.',' · ').replaceAll('_',' ');
   return (
-    <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{duration:.28}} className="flex flex-col h-full gap-6 max-w-7xl">
+    <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{duration:.28}} className="flex flex-col h-full gap-6 max-w-[1600px]">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {canFinance&&<Card className="col-span-1 md:col-span-2 bg-gradient-to-br from-[#0b3b78] via-[#092f61] to-[#07132f] text-white border-none shadow-xl shadow-blue-950/15 transition-transform duration-200 hover:-translate-y-0.5">
-          <h3 className="text-cyan-100 text-sm font-bold mb-1 uppercase tracking-widest">Saldo Kas Terverifikasi</h3>
-          <div className="text-4xl font-black mb-4 tracking-tight text-white">Rp {Number(stats?.saldo||0).toLocaleString('id-ID')}</div>
-          <div className="flex gap-6"><div><div className="text-xs text-cyan-200 font-bold uppercase tracking-wider mb-1">Masuk Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pemasukan_bulan||0).toLocaleString('id-ID')}</div></div><div><div className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">Keluar Bulan Ini</div><div className="font-bold text-lg">Rp{Number(stats?.pengeluaran_bulan||0).toLocaleString('id-ID')}</div></div></div>
-        </Card>}
-        {canOperations&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4"><Activity className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.laporan_aktif ?? 0}</div><div className="text-sm font-bold text-slate-500">Laporan Aktif</div></Card>}
-        {canOperations&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><Truck className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.ambulans_tersedia ?? 0}</div><div className="text-sm font-bold text-slate-500">Ambulans Tersedia</div></Card>}
-        {canFinance&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mb-4"><Clock className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{pendingFinance}</div><div className="text-sm font-bold text-slate-500">Menunggu Verifikasi</div></Card>}
-        {canFinance&&<Card className="flex flex-col justify-center transition-transform duration-200 hover:-translate-y-0.5"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><ReceiptText className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{db.transaksi.length}</div><div className="text-sm font-bold text-slate-500">Transaksi Terkini</div></Card>}
+        {canFinance&&<Card className="col-span-1 md:col-span-2 bg-gradient-to-br from-[#0b3b78] via-[#092f61] to-[#07132f] text-white border-none shadow-xl shadow-blue-950/15 transition-transform duration-200 hover:-translate-y-0.5"><h3 className="text-cyan-100 text-sm font-bold mb-1 uppercase tracking-widest">Saldo Kas Terverifikasi</h3><div className="text-4xl font-black mb-4 tracking-tight text-white">Rp {Number(stats?.saldo||0).toLocaleString('id-ID')}</div><div className="flex gap-6 text-sm"><div><div className="text-blue-200">Pemasukan bulan ini</div><div className="font-bold text-lg">Rp{Number(stats?.pemasukan_bulan||0).toLocaleString('id-ID')}</div></div><div><div className="text-blue-200">Pengeluaran bulan ini</div><div className="font-bold text-lg">Rp{Number(stats?.pengeluaran_bulan||0).toLocaleString('id-ID')}</div></div></div></Card>}
+        {canOperations&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-4"><Activity className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.laporan_aktif ?? 0}</div><div className="text-sm font-bold text-slate-500">Laporan Aktif</div></Card>}
+        {role==='kota'&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-cyan-100 text-cyan-700 rounded-2xl flex items-center justify-center mb-4"><Truck className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{stats?.ambulans_tersedia ?? 0}</div><div className="text-sm font-bold text-slate-500">Ambulans Tersedia</div></Card>}
+        {canFinance&&<Card className="flex flex-col justify-center"><div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mb-4"><Clock className="w-6 h-6"/></div><div className="text-3xl font-black text-slate-900">{pendingFinance}</div><div className="text-sm font-bold text-slate-500">Menunggu Verifikasi</div></Card>}
       </div>
-
-      <div className={`grid grid-cols-1 ${canOperations?'lg:grid-cols-3':'lg:grid-cols-2'} gap-6 flex-1 min-h-[350px]`}>
-        {canOperations&&<Card className="lg:col-span-2 flex flex-col"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-900">Volume Laporan 7 Hari</h3><span className="text-xs font-bold text-blue-700">SINKRONISASI AKTIF</span></div><div className="flex-1 w-full h-full min-h-[250px]"><ResponsiveContainer width="100%" height="100%"><AreaChart data={liveChart} margin={{ top:10,right:10,left:-20,bottom:0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><YAxis axisLine={false} tickLine={false} tick={{fontSize:12,fill:'#64748b',fontWeight:'bold'}}/><RechartsTooltip contentStyle={{borderRadius:'16px',border:'none'}}/><Area type="monotone" name="Ambulans" dataKey="darurat" stroke="#ef4444" strokeWidth={3} fillOpacity={0.08} fill="#ef4444"/><Area type="monotone" name="BPJS/Bencana" dataKey="sosial" stroke="#0b3b78" strokeWidth={3} fillOpacity={0.08} fill="#0b3b78"/></AreaChart></ResponsiveContainer></div></Card>}
-        {canFinance&&<Card><h3 className="font-bold text-slate-900 mb-4">Ringkasan Keuangan</h3><p className="text-sm leading-6 text-slate-600">Saldo dihitung dari transaksi yang telah terverifikasi. Pengeluaran tidak dapat diverifikasi apabila melebihi saldo yang tersedia. QR dan rekening pembayaran menggunakan pengaturan yang sama dengan portal warga.</p></Card>}
-        <Card className="flex flex-col bg-slate-50/50 border-none"><div className="flex items-center justify-between mb-6"><h3 className="font-bold text-slate-900">Aktivitas Terkini</h3><span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Audit</span></div><div className="flex-1 overflow-y-auto pr-2 space-y-5">{(stats?.activity||[]).length ? stats.activity.map(item=><div key={item.id} className="flex gap-3"><div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0"/><div><p className="text-sm font-semibold text-slate-800 capitalize">{actionLabel(item.action)}</p><p className="mt-1 text-xs text-slate-400">{item.actor||'Sistem'} • {new Date(item.created_at).toLocaleString('id-ID')}</p></div></div>) : <p className="text-sm text-slate-500">Belum ada aktivitas tercatat.</p>}</div></Card>
+      {role==='kota'&&<KotaMapDashboard addToast={addToast}/>}
+      {role==='kelurahan'&&<KelurahanStructureCard stats={stats} addToast={addToast}/>}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-[350px]">
+        {canOperations&&<Card className="lg:col-span-2 flex flex-col"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-slate-900">Volume Laporan 7 Hari</h3><span className="text-xs font-bold text-blue-700">SINKRONISASI AKTIF</span></div><div className="flex-1 w-full min-h-[250px]"><ResponsiveContainer width="100%" height="100%"><AreaChart data={liveChart} margin={{top:10,right:10,left:-20,bottom:0}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" axisLine={false} tickLine={false}/><YAxis axisLine={false} tickLine={false}/><RechartsTooltip/><Area type="monotone" name="Darurat" dataKey="darurat" stroke="#ef4444" strokeWidth={3} fillOpacity={.08} fill="#ef4444"/><Area type="monotone" name="Prioritas/Reguler" dataKey="sosial" stroke="#0b3b78" strokeWidth={3} fillOpacity={.08} fill="#0b3b78"/></AreaChart></ResponsiveContainer></div></Card>}
+        <Card className="flex flex-col bg-slate-50/50 border-none"><div className="flex items-center justify-between mb-6"><h3 className="font-bold text-slate-900">Aktivitas Terkini</h3><span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Audit</span></div><div className="flex-1 overflow-y-auto pr-2 space-y-5">{(stats?.activity||[]).length?stats.activity.map(item=><div key={item.id} className="flex gap-3"><div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0"/><div><p className="text-sm font-semibold text-slate-800 capitalize">{actionLabel(item.action)}</p><p className="mt-1 text-xs text-slate-400">{item.actor||'Sistem'} • {new Date(item.created_at).toLocaleString('id-ID')}</p></div></div>):<p className="text-sm text-slate-500">Belum ada aktivitas tercatat.</p>}</div></Card>
       </div>
     </motion.div>
   );
 };
 
 const ViewPelayanan = ({ db, refreshDashboard, role, addToast, requestConfirm }) => {
-  const [showInputModal, setShowInputModal] = useState(false);
-  const [inputType, setInputType] = useState('darurat');
-  const [inputCategory, setInputCategory] = useState('ambulans');
-  const [detail, setDetail] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const detailRequestRef = useRef(0);
-  const [manualSubmitting, setManualSubmitting] = useState(false);
-  const [manualDirty, setManualDirty] = useState(false);
-  const manualRequestUuidRef = useRef(newRequestUuid());
+  const [showInputModal,setShowInputModal]=useState(false);
+  const [inputType,setInputType]=useState('darurat');
+  const [inputCategory,setInputCategory]=useState('ambulans');
+  const [inputPriority,setInputPriority]=useState('reguler');
+  const [allowedRegions,setAllowedRegions]=useState([]);
+  const [manualCoords,setManualCoords]=useState({latitude:'',longitude:''});
+  const [detail,setDetail]=useState(null);const [detailLoading,setDetailLoading]=useState(false);const detailRequestRef=useRef(0);
+  const [manualSubmitting,setManualSubmitting]=useState(false);const [manualDirty,setManualDirty]=useState(false);const manualRequestUuidRef=useRef(newRequestUuid());
+  const [decisionTarget,setDecisionTarget]=useState(null);const [opdTarget,setOpdTarget]=useState(null);const [actionSubmitting,setActionSubmitting]=useState(false);
+  const [reportRows,setReportRows]=useState([]);const [reportPage,setReportPage]=useState(1);const [reportMeta,setReportMeta]=useState({current_page:1,last_page:1,total:0});
+  const [reportStatusFilter,setReportStatusFilter]=useState('');const [reportCategoryFilter,setReportCategoryFilter]=useState('');const [workflowFilter,setWorkflowFilter]=useState('');const [reportLoading,setReportLoading]=useState(false);
 
-  const [reportRows,setReportRows]=useState([]);
-  const [reportPage,setReportPage]=useState(1);
-  const [reportMeta,setReportMeta]=useState({current_page:1,last_page:1,total:0});
-  const [reportStatusFilter,setReportStatusFilter]=useState('');
-  const [reportCategoryFilter,setReportCategoryFilter]=useState('');
-  const [reportLoading,setReportLoading]=useState(false);
+  const loadRegions=()=>api.get('/regions/allowed-kelurahan').then(({data})=>setAllowedRegions(data.regions||[])).catch(()=>setAllowedRegions([]));
+  useEffect(()=>{loadRegions();},[role]);
+  const loadReports=async()=>{setReportLoading(true);try{const {data}=await api.get('/reports',{params:{page:reportPage,per_page:25,status:reportStatusFilter||undefined,category:reportCategoryFilter||undefined,workflow_status:workflowFilter||undefined}});setReportRows((data.data||[]).map(mapReportRow));setReportMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});}catch(err){addToast(errorMessage(err),'error');}finally{setReportLoading(false);}};
+  useEffect(()=>{loadReports();const onRefresh=()=>loadReports();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);},[reportPage,reportStatusFilter,reportCategoryFilter,workflowFilter,role]);
+  useEffect(()=>{if(!manualDirty)return;const warn=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[manualDirty]);
+  const closeManual=()=>{if(!manualDirty){setShowInputModal(false);return;}requestConfirm('Buang perubahan?','Data pengaduan yang sudah diisi belum disimpan.','Buang','Kembali',()=>{setManualDirty(false);setShowInputModal(false);},'danger');};
+  const openManual=()=>{manualRequestUuidRef.current=newRequestUuid();setManualDirty(false);setInputCategory('ambulans');setInputPriority('reguler');setInputType('darurat');setManualCoords({latitude:'',longitude:''});loadRegions();setShowInputModal(true);};
+  const handleManualInputSubmit=async(e)=>{e.preventDefault();const form=e.currentTarget;if(!form.checkValidity()){form.reportValidity();return;}setManualSubmitting(true);try{const payload=Object.fromEntries(new FormData(form).entries());payload.request_uuid=manualRequestUuidRef.current;payload.category=inputCategory;payload.priority=inputPriority;if(inputCategory==='ambulans') payload.type=inputType; else delete payload.type;if(manualCoords.latitude&&manualCoords.longitude)Object.assign(payload,manualCoords);const {data}=await api.post('/reports/manual',payload);addToast(`${data.message} Kode: ${data.code}`,'success');form.reset();setManualDirty(false);setShowInputModal(false);manualRequestUuidRef.current=newRequestUuid();await refreshDashboard();await loadReports();}catch(err){addToast(errorMessage(err),'error');}finally{setManualSubmitting(false);}};
+  const openDetail=async(code)=>{const rid=++detailRequestRef.current;setDetail({code});setDetailLoading(true);try{const {data}=await api.get(`/reports/${code}`);if(rid===detailRequestRef.current)setDetail(data.report);}catch(err){if(rid===detailRequestRef.current){setDetail(null);addToast(errorMessage(err),'error');}}finally{if(rid===detailRequestRef.current)setDetailLoading(false);}};
+  const closeDetail=()=>{detailRequestRef.current++;setDetail(null);setDetailLoading(false);};
+  const afterAction=async(msg)=>{addToast(msg,'success');await refreshDashboard();await loadReports();};
+  const forwardKecamatan=code=>requestConfirm('Ajukan ke Kecamatan?','Pastikan Kelurahan telah melakukan verifikasi awal. Pengaduan akan masuk ke Kecamatan untuk validasi dan cross-check.','Ajukan','Batal',async()=>{try{const {data}=await api.post(`/reports/${code}/forward-kecamatan`,{});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}},'success');
+  const validateKecamatan=code=>requestConfirm('Validasi dan kirim ke Kota?','Dengan konfirmasi ini, Kecamatan menyatakan data telah di-cross-check dan sesuai untuk diteruskan ke Karang Taruna Kota.','Validasi','Batal',async()=>{try{const {data}=await api.post(`/reports/${code}/kecamatan-decision`,{decision:'validate'});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}},'success');
+  const submitDecision=async(e)=>{e.preventDefault();setActionSubmitting(true);try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());payload.decision=decisionTarget.decision;const {data}=await api.post(`/reports/${decisionTarget.code}/kecamatan-decision`,payload);setDecisionTarget(null);await afterAction(data.message);}catch(err){addToast(errorMessage(err),'error');}finally{setActionSubmitting(false);}};
+  const submitOpd=async(e)=>{e.preventDefault();setActionSubmitting(true);try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());const {data}=await api.post(`/reports/${opdTarget}/forward-opd`,payload);setOpdTarget(null);await afterAction(data.message);}catch(err){addToast(errorMessage(err),'error');}finally{setActionSubmitting(false);}};
+  const processReport=async code=>{try{const {data}=await api.post(`/reports/${code}/assign`,{});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}};
+  const updateServiceStatus=async(code,status)=>{try{const {data}=await api.patch(`/reports/${code}/status`,{status});await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}};
+  const verifyReport=async code=>{try{const {data}=await api.post(`/reports/${code}/verify`);await afterAction(data.message);}catch(e){addToast(errorMessage(e),'error');}};
+  const roleFlowText=role==='kelurahan'?'Kelurahan menerima pengaduan dari warga/RT/RW, melakukan verifikasi awal, lalu mengajukan data ke Kecamatan.':role==='kecamatan'?'Kecamatan hanya memvalidasi dan melakukan cross-check laporan dari Kelurahan. Data yang sesuai diteruskan ke Kota; data bermasalah dikembalikan atau ditolak.':'Kota memonitor seluruh Kecamatan dan Kelurahan, menerima laporan yang sudah tervalidasi Kecamatan, serta melakukan tindak lanjut/rujukan OPD.';
 
-  useEffect(()=>{
-    let cancelled=false;
-    const load=async()=>{
-      setReportLoading(true);
-      try{
-        const {data}=await api.get('/reports',{params:{page:reportPage,per_page:25,status:reportStatusFilter||undefined,category:reportCategoryFilter||undefined}});
-        if(cancelled)return;
-        setReportRows((data.data||[]).map(mapReportRow));
-        setReportMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});
-      }catch(err){if(!cancelled)addToast(errorMessage(err),'error');}
-      finally{if(!cancelled)setReportLoading(false);}
-    };
-    load();
-    const onRefresh=()=>load();
-    window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
-    return()=>{cancelled=true;window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);};
-  },[reportPage,reportStatusFilter,reportCategoryFilter]);
+  return <div className="flex flex-col h-full animate-in fade-in">
+    <ModalForm isOpen={showInputModal} onClose={closeManual} title="Input Pengaduan Warga">
+      <form onSubmit={handleManualInputSubmit} onChange={()=>setManualDirty(true)} className="space-y-6">
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><b>Alur wilayah:</b> pengaduan selalu ditempatkan pada Kelurahan terlebih dahulu. Gmail warga wajib diisi karena kode pelacakan dikirim melalui email; WhatsApp tetap menjadi salah satu kanal penerimaan.</div>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <FieldGuide label="Sumber pengaduan" help="Kanal pertama warga menyampaikan pengaduan." required><select name="source" required className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"><option value="datang_langsung">Datang langsung</option><option value="whatsapp">WhatsApp</option><option value="telepon">Telepon</option></select></FieldGuide>
+          <FieldGuide label="Kelurahan tujuan awal" help="Daftar otomatis dibatasi sesuai hak akses akun." required><select name="region_id" required className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900"><option value="">Pilih kelurahan</option>{allowedRegions.map(r=><option key={r.id} value={r.id}>{r.name}{r.parent?.name?` · Kec. ${r.parent.name}`:''}</option>)}</select></FieldGuide>
+          <FieldGuide label="Kategori" required><select value={inputCategory} onChange={e=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900">{REPORT_CATEGORIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></FieldGuide>
+          <FieldGuide label="Prioritas" help="Terpisah dari jenis ambulans." required><select value={inputPriority} onChange={e=>setInputPriority(e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900">{REPORT_PRIORITIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></FieldGuide>
+        </div>
+        {inputCategory==='ambulans'&&<div><p className="mb-2 text-sm font-bold text-slate-800">Jenis layanan ambulans</p><div className="flex gap-2 rounded-xl bg-slate-100 p-1.5"><button type="button" onClick={()=>setInputType('darurat')} className={`flex-1 rounded-lg py-2 text-sm font-bold ${inputType==='darurat'?'bg-white text-red-700 shadow-sm':'text-slate-600'}`}>Darurat</button><button type="button" onClick={()=>setInputType('terjadwal')} className={`flex-1 rounded-lg py-2 text-sm font-bold ${inputType==='terjadwal'?'bg-white text-blue-700 shadow-sm':'text-slate-600'}`}>Terjadwal</button></div></div>}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <FieldGuide label="Nama warga" required><input name="name" required minLength={3} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>
+          <FieldGuide label="No. HP / WhatsApp" required><input name="phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>
+          <FieldGuide label="Gmail / email warga" help="Kode SKB akan dikirim ke alamat ini." required><input name="email" required type="email" placeholder="nama@gmail.com" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>
+          <FieldGuide label="NIK 16 digit" required><ProtectedNikInput name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono text-slate-900"/></FieldGuide>
+          <FieldGuide label="RT"><input name="rt_number" maxLength={10} placeholder="01" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide><FieldGuide label="RW"><input name="rw_number" maxLength={10} placeholder="01" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>
+        </div>
+        {inputCategory==='ambulans'&&inputType==='terjadwal'&&<div className="grid gap-5 sm:grid-cols-2"><FieldGuide label="Jadwal jemput" required><input name="scheduled_at" required type="datetime-local" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide><FieldGuide label="Estimasi durasi" required><select name="service_duration_minutes" defaultValue="120" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option></select></FieldGuide></div>}
+        <FieldGuide label={inputCategory==='ambulans'?'Lokasi penjemputan':'Lokasi / alamat terkait'} required={inputCategory==='ambulans'}><textarea name="pickup_location" required={inputCategory==='ambulans'} minLength={inputCategory==='ambulans'?5:undefined} rows={3} className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-slate-900" placeholder={inputCategory==='ambulans'?'Wajib: alamat penjemputan dan patokan':'Opsional untuk kategori non-ambulans'}/></FieldGuide>
+        <FieldGuide label={inputCategory==='ambulans'?'Kondisi medis / kebutuhan ambulans':'Isi pengaduan'} required><textarea name={inputCategory==='ambulans'?'medical_condition':'description'} required minLength={3} rows={4} className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>
+        {inputCategory==='ambulans'&&<FieldGuide label="Tujuan ambulans"><input name="destination" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900"/></FieldGuide>}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-bold text-slate-900">Koordinat marker</div><div className="text-xs text-slate-500">Ambil dari perangkat bila laporan mencantumkan lokasi lapangan.</div></div><Button type="button" size="sm" variant="outline" onClick={()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{setManualCoords({latitude:String(p.coords.latitude),longitude:String(p.coords.longitude)});addToast('Koordinat berhasil diambil.','success');},()=>addToast('Koordinat perangkat tidak dapat diakses.','error'),{enableHighAccuracy:true,timeout:10000}):addToast('Geolocation tidak didukung.','error')}><MapPin className="mr-2 h-4 w-4"/>Ambil Lokasi</Button></div>{manualCoords.latitude&&<div className="mt-2 font-mono text-xs text-slate-700">{manualCoords.latitude}, {manualCoords.longitude}</div>}</div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-5"><Button type="button" variant="ghost" disabled={manualSubmitting} onClick={closeManual}>Batal</Button><Button type="submit" disabled={manualSubmitting}>{manualSubmitting?'Menyimpan...':'Simpan Pengaduan & Kirim Kode'}</Button></div>
+      </form>
+    </ModalForm>
 
-  useEffect(()=>{
-    if(!manualDirty) return;
-    const warn=(event)=>{event.preventDefault();event.returnValue='';};
-    window.addEventListener('beforeunload',warn);
-    return ()=>window.removeEventListener('beforeunload',warn);
-  },[manualDirty]);
+    <ModalForm isOpen={Boolean(detail)} onClose={closeDetail} title="Detail Pengaduan">
+      {detailLoading?<div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail...</div>:detail&&<div className="grid gap-5 sm:grid-cols-2 text-sm">
+        <div><p className="text-xs font-bold uppercase text-slate-500">Kode Pelacakan</p><p className="mt-1 font-mono font-black text-slate-950">{detail.code}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Alur</p><p className="mt-1 font-black text-blue-800">{workflowLabel(detail.workflow_status)}</p></div>
+        <div><p className="text-xs font-bold uppercase text-slate-500">Warga</p><p className="mt-1 text-slate-900">{detail.name}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Gmail</p><p className="mt-1 break-all text-slate-900">{detail.email}</p></div>
+        <div><p className="text-xs font-bold uppercase text-slate-500">Kelurahan</p><p className="mt-1 text-slate-900">{detail.kelurahan}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Kecamatan</p><p className="mt-1 text-slate-900">{detail.kecamatan}</p></div>
+        <div><p className="text-xs font-bold uppercase text-slate-500">Kategori</p><p className="mt-1 text-slate-900">{categoryLabel(detail.category)}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Prioritas</p><p className="mt-1 font-bold text-slate-900">{priorityLabel(detail.priority)}</p></div>
+        <div className="sm:col-span-2"><p className="text-xs font-bold uppercase text-slate-500">Lokasi</p><p className="mt-1 leading-6 text-slate-900">{detail.pickup_location||'-'}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase text-slate-500">Isi laporan</p><p className="mt-1 whitespace-pre-line leading-6 text-slate-900">{detail.medical_condition||detail.description||'-'}</p></div>
+        {detail.assigned_agency&&<div className="sm:col-span-2 rounded-xl bg-emerald-50 p-3 text-emerald-900"><b>OPD / Instansi:</b> {detail.assigned_agency}</div>}
+        {detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase text-slate-500">Riwayat proses</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="text-xs font-bold text-slate-800">{h.from_status?workflowLabel(h.from_status):'Awal'} → <span className="text-blue-800">{workflowLabel(h.to_status)}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} · {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs text-slate-700">{h.reason}</div>}</div>)}</div></div>}
+      </div>}
+    </ModalForm>
 
-  const closeManual=()=>{
-    if(!manualDirty){setShowInputModal(false);return;}
-    requestConfirm('Buang perubahan?','Data yang sudah diisi belum disimpan. Jika ditutup, perubahan akan hilang.','Buang','Kembali',()=>{setManualDirty(false);setShowInputModal(false);},'danger');
-  };
-  const openManual=()=>{manualRequestUuidRef.current=newRequestUuid();setManualDirty(false);setShowInputModal(true);};
+    <ModalForm isOpen={Boolean(decisionTarget)} onClose={()=>!actionSubmitting&&setDecisionTarget(null)} title={decisionTarget?.decision==='return'?'Kembalikan ke Kelurahan':'Tolak pada Validasi Kecamatan'}><form onSubmit={submitDecision} className="space-y-5"><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Catatan wajib dan akan tampil pada riwayat agar Kelurahan mengetahui hasil cross-check.</div><FieldGuide label="Catatan validasi / alasan" required><textarea name="notes" required minLength={5} rows={4} className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={()=>setDecisionTarget(null)}>Batal</Button><Button type="submit" variant={decisionTarget?.decision==='reject'?'danger':'primary'} disabled={actionSubmitting}>{actionSubmitting?'Menyimpan...':'Simpan Keputusan'}</Button></div></form></ModalForm>
+    <ModalForm isOpen={Boolean(opdTarget)} onClose={()=>!actionSubmitting&&setOpdTarget(null)} title="Teruskan ke OPD / Instansi Terkait"><form onSubmit={submitOpd} className="space-y-5"><FieldGuide label="Nama OPD / instansi" help="Contoh: Dinas Sosial, Dinas Kesehatan, BPJS, Disdukcapil, BPBD, Satpol PP." required><input name="agency" required minLength={2} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Catatan rujukan"><textarea name="notes" rows={4} className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={()=>setOpdTarget(null)}>Batal</Button><Button type="submit" disabled={actionSubmitting}>{actionSubmitting?'Mengirim...':'Teruskan ke OPD'}</Button></div></form></ModalForm>
 
-  const handleManualInputSubmit = async (e) => {
-    e.preventDefault();
-    const formElement=e.currentTarget;
-    if(!formElement.checkValidity()){formElement.reportValidity();return;}
-    setManualSubmitting(true);
-    try {
-      const form = new FormData(formElement);
-      const payload=Object.fromEntries(form.entries());
-      payload.request_uuid=manualRequestUuidRef.current;
-      payload.category=inputCategory;
-      payload.type=inputCategory==='ambulans'?inputType:'darurat';
-      const {data}=await api.post('/reports/manual',payload);
-      addToast(data.message,'success');
-      formElement.reset();
-      setManualDirty(false);
-      setShowInputModal(false);
-      manualRequestUuidRef.current=newRequestUuid();
-      refreshDashboard();
-    } catch(err){addToast(errorMessage(err),'error');}
-    finally{setManualSubmitting(false);}
-  };
-  const processReport = async (code) => {
-    try { const {data}=await api.post(`/reports/${code}/assign`,{}); addToast(data.message,'success'); refreshDashboard(); } catch(err){addToast(errorMessage(err),'error');}
-  };
-  const verifyReport = async(code)=>{ try{const {data}=await api.post(`/reports/${code}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
-  const updateServiceStatus=async(code,status)=>{try{const {data}=await api.patch(`/reports/${code}/status`,{status});addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
-  const openDetail=async(code)=>{
-    const requestId=++detailRequestRef.current;
-    setDetailLoading(true);
-    setDetail({code});
-    try{const {data}=await api.get(`/reports/${code}`);if(detailRequestRef.current===requestId)setDetail(data.report);}catch(err){if(detailRequestRef.current===requestId){setDetail(null);addToast(errorMessage(err),'error');}}finally{if(detailRequestRef.current===requestId)setDetailLoading(false);}
-  };
-  const closeDetail=()=>{detailRequestRef.current++;setDetailLoading(false);setDetail(null);};
-
-  return (
-    <div className="flex flex-col h-full animate-in fade-in">
-      <ModalForm isOpen={showInputModal} onClose={closeManual} title="Input Permohonan Warga">
-        <form onSubmit={handleManualInputSubmit} onChange={()=>setManualDirty(true)} className="space-y-6">
-          <div className="p-4 bg-blue-50 text-blue-900 rounded-xl text-sm leading-6 border border-blue-100 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p>Form ini untuk laporan yang diterima petugas secara langsung, WhatsApp, atau telepon. Isi data berdasarkan informasi warga dan pastikan nomor kontak dapat dikonfirmasi.</p>
-          </div>
-          <FieldGuide label="Sumber informasi" help="Pilih kanal pertama kali warga menyampaikan laporan." required>
-            <select name="source" required className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm font-medium text-slate-900"><option value="datang_langsung">Datang langsung ke posko</option><option value="whatsapp">WhatsApp</option><option value="telepon">Telepon</option></select>
-          </FieldGuide>
-          <FieldGuide label="Kategori laporan" help="Kategori menentukan alur tindak lanjut dan apakah sistem perlu menugaskan ambulans." required>
-            <select value={inputCategory} onChange={(e)=>{setInputCategory(e.target.value);if(e.target.value!=='ambulans')setInputType('darurat');}} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm font-medium text-slate-900"><option value="ambulans">Layanan Ambulans</option><option value="bpjs">Pengaduan BPJS</option><option value="bencana">Laporan Bencana</option></select>
-          </FieldGuide>
-          {inputCategory==='ambulans' && <div><p className="mb-2 text-sm font-bold text-slate-800">Jenis layanan ambulans</p><p className="mb-3 text-xs leading-5 text-slate-500">Darurat untuk kebutuhan cepat. Terjadwal membutuhkan waktu jemput dan durasi layanan.</p><div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl"><button type="button" onClick={() => setInputType('darurat')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'darurat' ? 'bg-white shadow-sm text-red-700' : 'text-slate-600 hover:text-slate-900'}`}>Darurat</button><button type="button" onClick={() => setInputType('terjadwal')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${inputType === 'terjadwal' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}>Terjadwal</button></div></div>}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <FieldGuide label="Nama pelapor" help="Nama warga yang menyampaikan laporan." required><input name="name" required minLength={3} placeholder="Nama lengkap" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm text-slate-900" /></FieldGuide>
-            <FieldGuide label="No. kontak" help="Nomor Indonesia aktif untuk konfirmasi petugas." required><input name="phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm text-slate-900" /></FieldGuide>
-            <FieldGuide label="NIK 16 digit" help="Dipakai untuk identifikasi warga. Masukkan tepat 16 angka." required className="md:col-span-2"><input name="nik" required pattern="[0-9]{16}" inputMode="numeric" maxLength={16} className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 font-mono text-sm text-slate-900" placeholder="16 digit angka" /></FieldGuide>
-          </div>
-          {inputCategory==='ambulans' && inputType === 'terjadwal' && <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 animate-in fade-in">
-            <FieldGuide label="Jadwal jemput" help="Pilih waktu di masa mendatang. Sistem akan memeriksa konflik jadwal." required><input name="scheduled_at" required type="datetime-local" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 text-sm text-slate-900" /></FieldGuide>
-            <FieldGuide label="Estimasi durasi" help="Perkiraan lama ambulans digunakan pada layanan ini." required><select name="service_duration_minutes" defaultValue="120" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-slate-900"><option value="60">1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="240">4 jam</option><option value="360">6 jam</option></select></FieldGuide>
-          </div>}
-          <FieldGuide label="Lokasi / alamat terkait" help="Tulis alamat lengkap beserta RT/RW atau patokan agar petugas mudah menemukan lokasi." required><textarea name="pickup_location" required minLength={5} rows={3} placeholder="Alamat lengkap dan patokan" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 resize-none text-sm text-slate-900" /></FieldGuide>
-          <FieldGuide label="Keterangan / isi laporan" help="Jelaskan kondisi, kebutuhan, atau masalah utama secara ringkas tetapi spesifik." required><textarea name="medical_condition" required minLength={3} rows={3} placeholder="Kondisi atau kebutuhan warga" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#0b3b78]/20 resize-none text-sm text-slate-900" /></FieldGuide>
-          <div className="pt-6 flex gap-3 justify-end border-t border-slate-100"><Button type="button" variant="ghost" disabled={manualSubmitting} onClick={closeManual}>Batal</Button><Button type="submit" disabled={manualSubmitting} variant="primary">{manualSubmitting?'Menyimpan...':'Simpan ke Sistem'}</Button></div>
-        </form>
-      </ModalForm>
-
-      <ModalForm isOpen={Boolean(detail)} onClose={closeDetail} title="Detail Pelayanan Warga">
-        {detailLoading ? <div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail laporan...</div> : detail && <div className="grid gap-5 sm:grid-cols-2 text-sm">
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-black text-slate-950">{detail.code}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-black uppercase text-slate-950">{statusLabel(detail.status)}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nama warga</p><p className="mt-1 text-slate-900">{detail.name}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kontak</p><p className="mt-1 text-slate-900">{detail.phone}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">NIK</p><p className="mt-1 font-mono text-slate-900">{detail.nik_masked}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori</p><p className="mt-1 uppercase text-slate-900">{detail.category}</p></div>
-          <div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Lokasi</p><p className="mt-1 leading-6 text-slate-900">{detail.pickup_location}</p></div>
-          <div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kondisi / laporan</p><p className="mt-1 whitespace-pre-line leading-6 text-slate-900">{detail.medical_condition}</p></div>
-          {detail.scheduled_at&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jadwal</p><p className="mt-1 text-slate-900">{new Date(detail.scheduled_at).toLocaleString('id-ID')}</p></div>}
-          {detail.ambulance&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Ambulans</p><p className="mt-1 font-bold text-slate-900">{detail.ambulance.code}</p></div>}
-          {detail.driver&&<div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Pengemudi</p><p className="mt-1 font-bold text-slate-900">{detail.driver.name}</p></div>}
-          {detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-800"><span>{h.from_status?statusLabel(h.from_status):'Awal'}</span><span>→</span><span className="uppercase text-emerald-700">{statusLabel(h.to_status)}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}
-        </div>}
-      </ModalForm>
-
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
-        <div><h2 className="text-2xl font-black text-slate-950 tracking-tight">Daftar Pelayanan Warga</h2><p className="text-sm text-slate-600 font-medium">Manajemen ambulans, pengaduan BPJS, dan laporan bencana dari warga.</p></div>
-        {(role === 'petugas' || role === 'admin') && <Button onClick={openManual} variant="primary" className="shadow-lg shadow-[#022b20]/20"><Plus className="w-5 h-5 mr-2"/> Tambah Permohonan Warga</Button>}
-      </div>
-
-      <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3">
-        <select value={reportCategoryFilter} onChange={e=>{setReportCategoryFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua kategori</option><option value="ambulans">Ambulans</option><option value="bpjs">BPJS</option><option value="bencana">Bencana</option></select>
-        <select value={reportStatusFilter} onChange={e=>{setReportStatusFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="menunggu">Menunggu</option><option value="diproses">Diproses</option><option value="dijemput">Dijemput</option><option value="selesai">Selesai</option><option value="ditolak">Ditolak</option></select>
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{reportLoading?'Memuat data...':`${reportMeta.total} laporan`}</span><span>25 / halaman</span></div>
-      </div>
-
-      <Card noPadding className="flex-1 flex flex-col min-h-[400px]">
-        <div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm text-left">
-          <thead className="text-xs text-slate-700 uppercase tracking-wider bg-slate-50 border-b border-slate-100"><tr><th className="px-6 py-5 font-bold">Kode Laporan</th><th className="px-6 py-5 font-bold">Sumber</th><th className="px-6 py-5 font-bold">Nama Pemohon</th><th className="px-6 py-5 font-bold">Kategori</th><th className="px-6 py-5 font-bold">Jadwal</th><th className="px-6 py-5 font-bold">Status Pelayanan</th><th className="px-6 py-5 font-bold text-right">Aksi</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">{!reportLoading&&reportRows.length===0&&<tr><td colSpan={7} className="px-6 py-12 text-center text-sm font-semibold text-slate-500">Tidak ada laporan pada filter ini.</td></tr>}{reportRows.map((l) => <tr key={l.id} className="hover:bg-slate-50/70 transition-colors text-slate-800">
-            <td className="px-6 py-5 font-mono font-bold text-slate-950">{l.id}</td><td className="px-6 py-5 text-slate-600 uppercase text-xs font-bold">{l.sumber}</td><td className="px-6 py-5 text-slate-900 font-medium">{l.nama}</td><td className="px-6 py-5"><span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${l.kategori==='bpjs'?'bg-blue-50 text-blue-700':l.kategori==='bencana'?'bg-orange-50 text-orange-700':'bg-emerald-50 text-emerald-700'}`}>{l.kategori||'ambulans'}</span></td>
-            <td className="px-6 py-5 text-xs text-slate-700"><div className="font-bold">{l.service_start_at ? new Date(l.service_start_at).toLocaleString('id-ID') : ((l.kategori||'ambulans')==='ambulans' && l.jenis==='darurat'?'Saat ditugaskan':'-')}</div>{l.service_end_at && <div className="text-slate-500 mt-1">s/d {new Date(l.service_end_at).toLocaleString('id-ID')}</div>} {l.ambulance && <div className="mt-1 font-semibold text-emerald-700">{l.ambulance} • {l.driver}</div>}</td>
-            <td className="px-6 py-5"><span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${l.status === 'menunggu' ? 'bg-amber-50 text-amber-700 border-amber-200' : l.status === 'selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{l.status.toUpperCase()}</span></td>
-            <td className="px-6 py-5 text-right"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openDetail(l.id)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{l.status==='menunggu' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Tugaskan Ambulans?','Sistem akan memilih ambulans dan pengemudi yang tidak bentrok pada interval layanan ini.','Proses','Batal',()=>processReport(l.id),'success')}>Proses Penugasan</Button>}{l.status==='menunggu' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" onClick={()=>requestConfirm('Proses Pengaduan?','Laporan akan ditandai sedang ditangani Karang Taruna tanpa penugasan ambulans.','Proses','Batal',()=>updateServiceStatus(l.id,'diproses'),'success')}>Proses Pengaduan</Button>}{l.status==='diproses' && (l.kategori||'ambulans')==='ambulans' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Mulai Penjemputan?','Status unit akan menjadi bertugas.','Mulai','Batal',()=>updateServiceStatus(l.id,'dijemput'),'success')}>Dijemput</Button>}{l.status==='diproses' && (l.kategori||'ambulans')!=='ambulans' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Pengaduan?','Pengaduan akan ditandai selesai dan dapat diverifikasi admin.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesaikan</Button>}{l.status==='dijemput' && <Button size="sm" variant="success" onClick={()=>requestConfirm('Selesaikan Layanan?','Ambulans dan pengemudi akan tersedia kembali apabila tidak ada layanan aktif lain.','Selesai','Batal',()=>updateServiceStatus(l.id,'selesai'),'success')}>Selesai</Button>}{l.status==='selesai' && role==='admin' && <Button size="sm" variant="outline" onClick={()=>requestConfirm('Verifikasi Administrasi','Verifikasi laporan layanan selesai.','Verifikasi','Batal',()=>verifyReport(l.id),'success')}>Verifikasi Admin</Button>}</div></td>
-          </tr>)}</tbody>
-        </table></div>
-        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {reportMeta.current_page} dari {reportMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page<=1} onClick={()=>setReportPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page>=reportMeta.last_page} onClick={()=>setReportPage(p=>p+1)}>Berikutnya</Button></div></div>
-      </Card>
-    </div>
-  );
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Pelayanan & Pengaduan Warga</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{roleFlowText}</p></div><Button onClick={openManual}><Plus className="mr-2 h-5 w-5"/>Input Pengaduan</Button></div>
+    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-4"><select value={reportCategoryFilter} onChange={e=>{setReportCategoryFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua kategori</option>{REPORT_CATEGORIES.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select value={workflowFilter} onChange={e=>{setWorkflowFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua tahapan</option>{Object.entries(WORKFLOW_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select value={reportStatusFilter} onChange={e=>{setReportStatusFilter(e.target.value);setReportPage(1);}} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"><option value="">Semua status operasional</option><option value="menunggu">Menunggu</option><option value="diproses">Diproses</option><option value="dijemput">Dijemput</option><option value="selesai">Selesai</option><option value="ditolak">Ditolak</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{reportLoading?'Memuat...':`${reportMeta.total} pengaduan`}</span><span>25/halaman</span></div></div>
+    <Card noPadding className="flex-1"><div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600"><tr><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Wilayah</th><th className="p-4 text-left">Warga</th><th className="p-4 text-left">Kategori / Prioritas</th><th className="p-4 text-left">Tahapan</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi sesuai role</th></tr></thead><tbody>{!reportLoading&&reportRows.length===0&&<tr><td colSpan={7} className="p-12 text-center text-slate-500">Tidak ada pengaduan pada filter ini.</td></tr>}{reportRows.map(l=><tr key={l.id} className="border-t border-slate-100 align-top text-slate-800"><td className="p-4 font-mono font-black text-slate-950">{l.id}<div className="mt-1 text-[10px] font-sans uppercase text-slate-400">{l.sumber}</div></td><td className="p-4"><div className="font-bold text-slate-950">{l.kelurahan}</div><div className="text-xs text-slate-500">Kec. {l.kecamatan}</div></td><td className="p-4 font-semibold text-slate-900">{l.nama}</td><td className="p-4"><div className="font-bold">{categoryLabel(l.kategori)}</div><div className={`mt-1 text-xs font-black ${l.prioritas==='darurat'?'text-red-700':'text-slate-500'}`}>{priorityLabel(l.prioritas)}</div></td><td className="p-4"><span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800">{workflowLabel(l.workflow)}</span></td><td className="p-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{statusLabel(l.status)}</span></td><td className="p-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openDetail(l.id)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>
+      {role==='kelurahan'&&['menunggu_kelurahan','perlu_perbaikan_kelurahan'].includes(l.workflow)&&<Button size="sm" onClick={()=>forwardKecamatan(l.id)}>Ajukan Kecamatan</Button>}
+      {role==='kecamatan'&&l.workflow==='diajukan_kecamatan'&&<><Button size="sm" variant="success" onClick={()=>validateKecamatan(l.id)}>Validasi → Kota</Button><Button size="sm" variant="outline" onClick={()=>setDecisionTarget({code:l.id,decision:'return'})}>Kembalikan</Button><Button size="sm" variant="danger" onClick={()=>setDecisionTarget({code:l.id,decision:'reject'})}>Tolak</Button></>}
+      {role==='kota'&&['diterima_kota','diteruskan_opd'].includes(l.workflow)&&<><Button size="sm" variant="outline" onClick={()=>setOpdTarget(l.id)}>Teruskan OPD</Button>{l.status==='menunggu'&&l.kategori==='ambulans'&&<Button size="sm" onClick={()=>requestConfirm('Tugaskan ambulans?','Penugasan dilakukan setelah laporan lolos validasi wilayah.','Tugaskan','Batal',()=>processReport(l.id),'success')}>Tugaskan Ambulans</Button>}{l.status==='menunggu'&&l.kategori!=='ambulans'&&<Button size="sm" onClick={()=>updateServiceStatus(l.id,'diproses')}>Mulai Proses</Button>}{l.status==='diproses'&&l.kategori==='ambulans'&&<Button size="sm" onClick={()=>updateServiceStatus(l.id,'dijemput')}>Dijemput</Button>}{['diproses','dijemput'].includes(l.status)&&<Button size="sm" variant="success" onClick={()=>updateServiceStatus(l.id,'selesai')}>Selesai</Button>}{l.status==='selesai'&&<Button size="sm" variant="outline" onClick={()=>verifyReport(l.id)}>Verifikasi Kota</Button>}</>}
+    </div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {reportMeta.current_page} dari {reportMeta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page<=1} onClick={()=>setReportPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={reportLoading||reportMeta.current_page>=reportMeta.last_page} onClick={()=>setReportPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+  </div>;
 };
 
 const ViewAmbulans = ({ db, refreshDashboard, role, addToast }) => {
@@ -1037,8 +1230,8 @@ const ViewAmbulans = ({ db, refreshDashboard, role, addToast }) => {
   const openCreate=()=>{setEditing(null);setOpen(true);};
   const openEdit=(a)=>{setEditing(a);setOpen(true);};
   return <div>
-    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Ambulans</h2><p className="text-sm text-slate-600">Lihat status unit dan perbarui data operasional ambulans dari kolom aksi.</p></div>{role==='admin'&&<Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah Unit</Button>}</div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Nomor Polisi</th><th className="p-4 text-left">Kapasitas</th><th className="p-4 text-left">Status Saat Ini</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{db.ambulans.map(a=><tr key={a.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-bold text-slate-950">{a.id}</td><td className="p-4">{a.nopol}</td><td className="p-4">{a.kapasitas} orang</td><td className="p-4 uppercase"><span className={`px-3 py-1 rounded-full text-xs font-bold ${a.status==='tersedia'?'bg-emerald-50 text-emerald-700':a.status==='maintenance'?'bg-red-50 text-red-700':'bg-blue-50 text-blue-700'}`}>{statusLabel(a.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>setDetail(a)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{role==='admin'&&<Button size="sm" variant="outline" onClick={()=>openEdit(a)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>}</div></td></tr>)}</tbody></table></div></Card>
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Ambulans</h2><p className="text-sm text-slate-600">Lihat status unit dan perbarui data operasional ambulans dari kolom aksi.</p></div>{role==='kota'&&<Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah Unit</Button>}</div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Nomor Polisi</th><th className="p-4 text-left">Kapasitas</th><th className="p-4 text-left">Status Saat Ini</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{db.ambulans.map(a=><tr key={a.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-bold text-slate-950">{a.id}</td><td className="p-4">{a.nopol}</td><td className="p-4">{a.kapasitas} orang</td><td className="p-4 uppercase"><span className={`px-3 py-1 rounded-full text-xs font-bold ${a.status==='tersedia'?'bg-emerald-50 text-emerald-700':a.status==='maintenance'?'bg-red-50 text-red-700':'bg-blue-50 text-blue-700'}`}>{statusLabel(a.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>setDetail(a)}><Eye className="mr-1 h-4 w-4"/>Detail</Button>{role==='kota'&&<Button size="sm" variant="outline" onClick={()=>openEdit(a)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>}</div></td></tr>)}</tbody></table></div></Card>
     <ModalForm isOpen={Boolean(detail)} onClose={()=>setDetail(null)} title="Detail Unit Ambulans">{detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode unit</p><p className="mt-1 font-black text-slate-950">{detail.id}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nomor polisi</p><p className="mt-1 font-bold text-slate-950">{detail.nopol}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kapasitas</p><p className="mt-1 text-slate-900">{detail.kapasitas} orang</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{statusLabel(detail.status)}</p></div>{detail.notes&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Catatan</p><p className="mt-1 leading-6 text-slate-900">{detail.notes}</p></div>}</div>}</ModalForm>
     <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Unit Ambulans':'Tambah Unit Ambulans'}><form onSubmit={submit} className="space-y-5">
       {!editing&&<FieldGuide label="Kode unit" help="Kode unik internal, contoh KT-03." required><input name="code" required placeholder="KT-03" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>}
@@ -1071,14 +1264,14 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const [transactionTypeFilter,setTransactionTypeFilter]=useState('');
   const [transactionLoading,setTransactionLoading]=useState(false);
   useEffect(()=>{
-    if(role!=='admin'&&role!=='petugas')return;
+    if(!STAFF_ROLES.includes(role))return;
     loadSetting();
     const onRefresh=()=>loadSetting();
     window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
     return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);
   },[role]);
   useEffect(()=>{
-    if(!['admin','petugas'].includes(role))return;
+    if(!STAFF_ROLES.includes(role))return;
     let cancelled=false;
     const load=async()=>{
       setTransactionLoading(true);
@@ -1090,7 +1283,7 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
     const onRefresh=()=>load();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
     return()=>{cancelled=true;window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);};
   },[role,transactionPage,transactionStatusFilter,transactionTypeFilter]);
-  if(!['admin','petugas'].includes(role)) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses Admin atau Petugas Karang Taruna.</b></Card>;
+  if(!STAFF_ROLES.includes(role)) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses pengelola Kota, Kecamatan, atau Kelurahan.</b></Card>;
   const submit=async(e)=>{e.preventDefault();if(transactionSubmitting)return;setTransactionSubmitting(true);try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.request_uuid=transactionRequestUuidRef.current;f.amount=Number(f.amount);await api.post('/transactions',f);addToast('Transaksi dicatat dan menunggu verifikasi.','success');setOpen(false);transactionRequestUuidRef.current=newRequestUuid();refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}finally{setTransactionSubmitting(false);}};
   const saveSetting=async(e)=>{e.preventDefault();if(settingsSubmitting)return;setSettingsSubmitting(true);try{const form=new FormData(e.currentTarget);form.set('is_active',e.currentTarget.is_active.checked?'1':'0');await api.post('/infaq/settings',form);addToast('Pengaturan pembayaran diperbarui.','success');setOpenSettings(false);loadSetting();}catch(err){addToast(errorMessage(err),'error');}finally{setSettingsSubmitting(false);}};
   const verify=async(id)=>{try{const {data}=await api.post(`/transactions/${id}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
@@ -1101,7 +1294,7 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   return <div>
     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Kas, Infaq & Transaksi</h2><p className="text-sm text-slate-600">Jenis pemasukan/pengeluaran kini terlihat langsung di tabel. Setiap baris selalu memiliki tombol aksi.</p></div><div className="flex flex-col sm:flex-row gap-2"><Button variant="outline" onClick={()=>{loadSetting();setOpenSettings(true);}}><QrCode className="w-4 h-4 mr-2"/>Pengaturan Pembayaran</Button><Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Transaksi</Button></div></div>
     <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3"><select value={transactionTypeFilter} onChange={e=>{setTransactionTypeFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua jenis</option><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select><select value={transactionStatusFilter} onChange={e=>{setTransactionStatusFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="pending">Menunggu Verifikasi</option><option value="verified">Terverifikasi</option><option value="rejected">Ditolak</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{transactionLoading?'Memuat data...':`${transactionMeta.total} transaksi`}</span><span>25 / halaman</span></div></div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Jenis</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar / Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!transactionLoading&&transactionRows.length===0&&<tr><td colSpan={8} className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada transaksi pada filter ini.</td></tr>}{transactionRows.map(t=><tr key={t.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-mono text-slate-950">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${t.tipe==='pemasukan'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{t.tipe}</span></td><td className="p-4"><span className="text-xs font-bold uppercase text-slate-700">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium text-slate-900">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-500">WA ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold text-slate-950">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{statusLabel(t.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openTransactionDetail(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Detail</Button>{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>setRejectTarget(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {transactionMeta.current_page} dari {transactionMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page<=1} onClick={()=>setTransactionPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page>=transactionMeta.last_page} onClick={()=>setTransactionPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Jenis</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar / Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!transactionLoading&&transactionRows.length===0&&<tr><td colSpan={8} className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada transaksi pada filter ini.</td></tr>}{transactionRows.map(t=><tr key={t.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-mono text-slate-950">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${t.tipe==='pemasukan'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{t.tipe}</span></td><td className="p-4"><span className="text-xs font-bold uppercase text-slate-700">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium text-slate-900">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-500">HP ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold text-slate-950">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{statusLabel(t.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openTransactionDetail(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Detail</Button>{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>setRejectTarget(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {transactionMeta.current_page} dari {transactionMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page<=1} onClick={()=>setTransactionPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page>=transactionMeta.last_page} onClick={()=>setTransactionPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
     <ModalForm isOpen={Boolean(detail)} onClose={closeTransactionDetail} title="Detail Transaksi">{detailLoading?<div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail transaksi...</div>:detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-bold text-slate-950">{detail.code}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</p><p className="mt-1 font-bold capitalize text-slate-950">{detail.type}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tanggal</p><p className="mt-1 text-slate-900">{detail.transaction_date}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{statusLabel(detail.status)}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori / Pembayar</p><p className="mt-1 text-slate-900">{detail.payer_name||detail.category}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nominal</p><p className="mt-1 text-xl font-black text-slate-950">Rp{Number(detail.amount).toLocaleString('id-ID')}</p></div>{detail.description&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Keterangan</p><p className="mt-1 leading-6 text-slate-900">{detail.description}</p></div>}{detail.rejection_reason&&<div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800"><b>Alasan penolakan:</b> {detail.rejection_reason}</div>}{detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="text-xs font-bold text-slate-800">{h.from_status?statusLabel(h.from_status):'Awal'} → <span className="uppercase text-emerald-700">{statusLabel(h.to_status)}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}</div>}</ModalForm>
     <ModalForm isOpen={open} onClose={()=>setOpen(false)} title="Tambah Transaksi"><form onSubmit={submit} className="space-y-5">
       <FieldGuide label="Jenis transaksi" help="Pemasukan menambah saldo kas. Pengeluaran mengurangi saldo setelah transaksi diverifikasi." required><select name="type" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select></FieldGuide>
@@ -1130,34 +1323,19 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
 };
 
 const ViewUsers = ({ addToast }) => {
-  const [users,setUsers]=useState([]);
-  const [page,setPage]=useState(1);
-  const [meta,setMeta]=useState({current_page:1,last_page:1,total:0});
-  const [loading,setLoading]=useState(false);
-  const [open,setOpen]=useState(false);
-  const [editing,setEditing]=useState(null);
-  const load=async()=>{setLoading(true);try{const {data}=await api.get('/users',{params:{page,per_page:25}});setUsers(data.data||[]);setMeta({current_page:data.current_page||1,last_page:data.last_page||1,total:data.total||0});}catch(e){addToast(errorMessage(e),'error');}finally{setLoading(false);}};
-  useEffect(()=>{
-    load();
-    const onRefresh=()=>load();
-    window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);
-    return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);
-  },[page]);
-  const openCreate=()=>{setEditing(null);setOpen(true);};
-  const openEdit=(u)=>{setEditing(u);setOpen(true);};
-  const submit=async(e)=>{e.preventDefault();try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(editing){if(!payload.password)delete payload.password;await api.patch(`/users/${editing.id}`,payload);addToast('Data pengguna berhasil diperbarui.','success');}else{await api.post('/users',payload);addToast('Pengguna berhasil dibuat.','success');}setOpen(false);setEditing(null);load();}catch(err){addToast(errorMessage(err),'error');}};
-  const toggleActive=async(u)=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');load();}catch(err){addToast(errorMessage(err),'error');}};
-  return <div>
-    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna</h2><p className="text-sm text-slate-600">Kelola akun Admin dan Petugas Karang Taruna. Admin memiliki kewenangan penuh, sedangkan Petugas menjalankan pelayanan warga, operasional, kas, transaksi, dan pengaturan pembayaran.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat pengguna...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="w-4 h-4 mr-2"/>Tambah Pengguna</Button></div>
-    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Peran</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 font-bold text-xs text-slate-800">{u.role==='admin'?'Admin':'Petugas Karang Taruna'}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="w-4 h-4 mr-1"/>Edit</Button><Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button></div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
-    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Pengguna':'Tambah Pengguna'}><form onSubmit={submit} className="space-y-5">
-      <FieldGuide label="Nama lengkap" help="Nama petugas yang tampil pada administrasi sistem." required><input name="name" required defaultValue={editing?.name||''} placeholder="Nama lengkap" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      <FieldGuide label="Username" help="Minimal 4 karakter dan harus unik. Dapat digunakan untuk login." required><input name="username" required minLength={4} defaultValue={editing?.username||''} placeholder="username" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      <FieldGuide label="Email" help="Email harus unik dan dapat digunakan untuk login." required><input name="email" type="email" required defaultValue={editing?.email||''} placeholder="nama@contoh.id" className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      <FieldGuide label="Peran" help="Admin mengelola seluruh konfigurasi dan pengguna. Petugas Karang Taruna menjalankan pelayanan warga, operasional ambulans, kas, transaksi, dan pengaturan pembayaran." required><select name="role" defaultValue={editing?.role||'petugas'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"><option value="petugas">Petugas Karang Taruna</option><option value="admin">Admin</option></select></FieldGuide>
-      <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika password tidak ingin diubah. Minimal 10 karakter jika diisi.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} placeholder={editing?'Kosongkan jika tidak diubah':'Minimal 10 karakter'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
-      <Button type="submit" className="w-full sm:w-auto">{editing?'Simpan Perubahan':'Simpan Pengguna'}</Button>
-    </form></ModalForm>
+  const [users,setUsers]=useState([]);const [regions,setRegions]=useState([]);const [page,setPage]=useState(1);const [meta,setMeta]=useState({current_page:1,last_page:1,total:0});const [loading,setLoading]=useState(false);const [open,setOpen]=useState(false);const [editing,setEditing]=useState(null);const [formRole,setFormRole]=useState('kelurahan');
+  const load=async()=>{setLoading(true);try{const [{data:u},{data:r}]=await Promise.all([api.get('/users',{params:{page,per_page:25}}),api.get('/regions')]);setUsers(u.data||[]);setMeta({current_page:u.current_page||1,last_page:u.last_page||1,total:u.total||0});setRegions(r.regions||[]);}catch(e){addToast(errorMessage(e),'error');}finally{setLoading(false);}};
+  useEffect(()=>{load();const onRefresh=()=>load();window.addEventListener('siagakarta:dashboard-refreshed',onRefresh);return()=>window.removeEventListener('siagakarta:dashboard-refreshed',onRefresh);},[page]);
+  const openCreate=()=>{setEditing(null);setFormRole('kelurahan');setOpen(true);};const openEdit=u=>{setEditing(u);setFormRole(u.role);setOpen(true);};
+  const submit=async e=>{e.preventDefault();try{const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(editing){if(!payload.password)delete payload.password;await api.patch(`/users/${editing.id}`,payload);addToast('Data pengguna dan wilayah berhasil diperbarui.','success');}else{await api.post('/users',payload);addToast('Akun pengelola wilayah berhasil dibuat.','success');}setOpen(false);setEditing(null);load();}catch(err){addToast(errorMessage(err),'error');}};
+  const toggleActive=async u=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');load();}catch(err){addToast(errorMessage(err),'error');}};
+  const selectable=regions.filter(r=>r.level===formRole);
+  return <div><div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna & Wilayah</h2><p className="text-sm text-slate-600">Karang Taruna Kota membuat akun Kecamatan/Kelurahan dan mengikat setiap akun ke wilayah spesifik. Role Kota tidak dapat dibuat dari panel ini.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="mr-2 h-4 w-4"/>Tambah Pengguna</Button></div>
+    <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Peran</th><th className="p-4 text-left">Wilayah</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 font-bold text-xs">{roleDisplay(u.role)}</td><td className="p-4"><div className="font-bold text-slate-900">{u.region?.name||'-'}</div><div className="text-xs text-slate-500">{u.region?.code||''}</div></td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>{u.role!=='kota'&&<Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button>}</div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
+    <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);}} title={editing?'Edit Pengguna':'Tambah Pengguna'}><form onSubmit={submit} className="space-y-5"><FieldGuide label="Nama lengkap" required><input name="name" required defaultValue={editing?.name||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Username" required><input name="username" required minLength={4} defaultValue={editing?.username||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Email akun" required><input name="email" type="email" required defaultValue={editing?.email||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide>
+      <FieldGuide label="Tingkat Karang Taruna" help="Akun Kecamatan dan Kelurahan memiliki hak akses berbeda sesuai alur validasi." required><select name="role" value={formRole} onChange={e=>setFormRole(e.target.value)} disabled={editing?.role==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900">{editing?.role==='kota'&&<option value="kota">Kota</option>}{editing?.role!=='kota'&&<><option value="kecamatan">Kecamatan</option><option value="kelurahan">Kelurahan</option></>}</select></FieldGuide>
+      <FieldGuide label="Wilayah akun" help={formRole==='kecamatan'?'Pilih kecamatan yang menjadi cakupan akun.':formRole==='kelurahan'?'Pilih kelurahan yang menjadi cakupan akun.':'Akun Kota terikat ke Kota Bandung.'} required={formRole!=='kota'}><select name="region_id" required={formRole!=='kota'} defaultValue={editing?.region_id||''} disabled={formRole==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih wilayah</option>{selectable.map(r=><option key={r.id} value={r.id}>{r.name} · {r.code}</option>)}</select></FieldGuide>
+      <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika tidak diubah. Minimal 10 karakter.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><Button type="submit">{editing?'Simpan Perubahan':'Simpan Pengguna'}</Button></form></ModalForm>
   </div>;
 };
 
@@ -1166,8 +1344,8 @@ const ViewLaporan = ({ addToast, role }) => {
   return <div className="max-w-4xl mx-auto animate-in fade-in">
     <Card className="mb-6 border-transparent shadow-lg bg-gradient-to-br from-[#0b3b78] to-[#07132f] text-white"><div className="flex items-center gap-4 sm:gap-5"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileSpreadsheet className="w-7 h-7 text-cyan-200"/></div><div><h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">Unduh Laporan Sistem</h2><p className="text-blue-100/90 text-sm font-medium">Pilih format laporan yang diperlukan. File akan diunduh langsung tanpa membuka halaman cetak.</p></div></div></Card>
     <div className="grid gap-4">
-      {(role==='admin'||role==='petugas')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup ambulans, pengaduan BPJS, laporan bencana, status, dan petugas layanan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
-      {(role==='admin'||role==='petugas')&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {STAFF_ROLES.includes(role)&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup 10 kategori pengaduan, prioritas, wilayah, tahapan validasi Kelurahan → Kecamatan → Kota, status, dan OPD tujuan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {STAFF_ROLES.includes(role)&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
     </div>
   </div>;
 };
@@ -1186,6 +1364,7 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false });
   const dashboardInFlight=useRef(null);
+  const dashboardRefreshQueued=useRef(false);
   const revisionRef=useRef(null);
   const notificationSignatureRef=useRef(null);
   const sessionWarningRef=useRef('');
@@ -1208,18 +1387,25 @@ export default function App() {
   };
   const refreshDashboard=async()=>{
     if(!getToken()) return;
-    if(dashboardInFlight.current) return dashboardInFlight.current;
-    dashboardInFlight.current=(async()=>{
-      try{
-        const {data}=await api.get('/dashboard');
-        setDb(data.db);
-        setDashboardStats(data.stats||{});
-        window.dispatchEvent(new CustomEvent('siagakarta:dashboard-refreshed'));
-      }catch(err){
-        if(err?.response?.status!==401) addToast(errorMessage(err),'error');
-      }finally{dashboardInFlight.current=null;}
-    })();
-    return dashboardInFlight.current;
+    if(dashboardInFlight.current){
+      dashboardRefreshQueued.current=true;
+      return dashboardInFlight.current;
+    }
+    do {
+      dashboardRefreshQueued.current=false;
+      dashboardInFlight.current=(async()=>{
+        try{
+          const {data}=await api.get('/dashboard',{params:{_ts:Date.now()}});
+          setDb(data.db);
+          setDashboardStats(data.stats||{});
+          window.dispatchEvent(new CustomEvent('siagakarta:dashboard-refreshed'));
+        }catch(err){
+          if(err?.response?.status!==401) addToast(errorMessage(err),'error');
+        }
+      })();
+      await dashboardInFlight.current;
+      dashboardInFlight.current=null;
+    } while(dashboardRefreshQueued.current && getToken());
   };
   const restoreSession=async({replace=false}={})=>{
     if(!getToken()) return false;
@@ -1243,16 +1429,18 @@ export default function App() {
     }catch(err){ if(err?.response?.status!==401) console.warn('Session refresh failed'); }
   };
   const checkSync=async()=>{
-    if(!getToken() || document.visibilityState!=='visible' || !['admin','petugas'].includes(role)) return;
+    if(!getToken() || document.visibilityState!=='visible' || !STAFF_ROLES.includes(role)) return;
     try{
-      const {data}=await api.get('/sync');
+      const {data}=await api.get('/sync',{params:{_ts:Date.now()}});
       const signature=JSON.stringify(data.revisions||{});
       if(revisionRef.current && revisionRef.current!==signature) await refreshDashboard();
       revisionRef.current=signature;
       const notificationSignature=JSON.stringify(data.notifications||{});
       if(notificationSignatureRef.current && notificationSignatureRef.current!==notificationSignature) window.dispatchEvent(new CustomEvent('siagakarta:notifications-changed'));
       notificationSignatureRef.current=notificationSignature;
-    }catch{}
+    }catch(err){
+      if(err?.response?.status!==401) console.warn('Dashboard sync failed:', errorMessage(err));
+    }
   };
 
   useEffect(()=>{
@@ -1299,7 +1487,13 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if(!['admin','petugas'].includes(role)) return;
+    if(role!=='warga') return;
+    const timer=setInterval(()=>{ if(document.visibilityState==='visible') loadPublic(); },15000);
+    return()=>clearInterval(timer);
+  },[role]);
+
+  useEffect(()=>{
+    if(!STAFF_ROLES.includes(role)) return;
     revisionRef.current=null;
     notificationSignatureRef.current=null;
     refreshDashboard();
@@ -1310,7 +1504,7 @@ export default function App() {
     const onVisible=()=>{ if(document.visibilityState==='visible'){refreshSession();checkSync();} };
     document.addEventListener('visibilitychange',onVisible);
     const refreshTimer=setInterval(refreshSession,10*60*1000);
-    const syncTimer=setInterval(checkSync,10000);
+    const syncTimer=setInterval(checkSync,5000);
     const warningTimer=setInterval(()=>{
       const meta=getAuthMeta();
       const hard=meta.absolute_expires_at ? new Date(meta.absolute_expires_at).getTime() : 0;
@@ -1331,8 +1525,8 @@ export default function App() {
     <div className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[9999] flex flex-col gap-3 pointer-events-none">{toasts.map(t=><div key={t.id} className="pointer-events-auto bg-[#111] text-white px-4 sm:px-5 py-3.5 rounded-xl w-full sm:w-auto shadow-2xl text-sm font-bold flex items-center gap-3">{t.type==='success'?<CheckCircle2 className="w-5 h-5 text-emerald-400"/>:<AlertCircle className={`w-5 h-5 ${t.type==='error'?'text-red-400':'text-blue-400'}`}/>} {t.msg}</div>)}</div>
     <ConfirmModal {...confirmModal}/>
     <DeveloperWatermark/>
-    {role==='warga'&&<PublicView setRole={setRole} db={db} publicStats={publicStats} addToast={addToast}/>} 
-    {role==='login'&&<Login setRole={setRole} addToast={addToast} onLogin={setCurrentUser} demo={publicStats.demo}/>} 
-    {['admin','petugas'].includes(role)&&<DashboardLayout role={role} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>} 
+    {role==='warga'&&<PublicView setRole={setRole} db={db} publicStats={publicStats} addToast={addToast} refreshPublic={loadPublic}/>}
+    {role==='login'&&<Login setRole={setRole} addToast={addToast} onLogin={setCurrentUser} demo={publicStats.demo}/>}
+    {STAFF_ROLES.includes(role)&&<DashboardLayout role={role} currentUser={currentUser} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>}
   </>;
 }

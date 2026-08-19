@@ -3,20 +3,21 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Models\Region;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Validator;
 
 class CreateInitialAdmin extends Command
 {
     protected $signature = 'siagakarta:create-admin {--name=} {--email=} {--username=}';
-    protected $description = 'Membuat akun Admin secara aman tanpa password default atau password di shell history.';
+    protected $description = 'Membuat akun Kota secara aman tanpa password default atau password di shell history.';
 
     public function handle(): int
     {
-        $name=(string)($this->option('name') ?: $this->ask('Nama Admin'));
-        $email=User::normalizeIdentity((string)($this->option('email') ?: $this->ask('Email Admin')));
-        $username=User::normalizeIdentity((string)($this->option('username') ?: $this->ask('Username Admin')));
-        $password=(string)$this->secret('Password Admin (minimal 10 karakter)');
+        $name=(string)($this->option('name') ?: $this->ask('Nama Pengelola Kota'));
+        $email=User::normalizeIdentity((string)($this->option('email') ?: $this->ask('Email Pengelola Kota')));
+        $username=User::normalizeIdentity((string)($this->option('username') ?: $this->ask('Username Pengelola Kota')));
+        $password=(string)$this->secret('Password Pengelola Kota (minimal 10 karakter)');
         $confirm=(string)$this->secret('Ulangi password');
 
         if($password!==$confirm) {
@@ -38,9 +39,9 @@ class CreateInitialAdmin extends Command
 
         $user=User::create([
             'name'=>$name,'email'=>$email,'username'=>$username,'password'=>$password,
-            'role'=>'admin','is_active'=>true,
+            'role'=>'kota','region_id'=>Region::where('level','kota')->value('id'),'is_active'=>true,
         ]);
-        $this->info("Admin {$user->username} berhasil dibuat.");
+        $this->info("Akun Kota {$user->username} berhasil dibuat.");
         return self::SUCCESS;
     }
 }

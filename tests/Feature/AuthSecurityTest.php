@@ -15,11 +15,11 @@ class AuthSecurityTest extends TestCase
     public function test_login_identity_is_case_insensitive_and_persisted_normalized(): void
     {
         $user = User::create([
-            'name' => 'Admin Test',
+            'name' => 'Kota Test',
             'username' => 'AdMiN.Test',
             'email' => 'ADMIN.TEST@EXAMPLE.COM',
             'password' => Hash::make('StrongPass123!'),
-            'role' => 'admin',
+            'role' => 'kota',
             'is_active' => true,
         ]);
 
@@ -33,18 +33,18 @@ class AuthSecurityTest extends TestCase
             ]);
 
         $response->assertOk()
-            ->assertJsonPath('user.role', 'admin')
+            ->assertJsonPath('user.role', 'kota')
             ->assertJsonStructure(['token', 'expires_at', 'absolute_expires_at']);
     }
 
     public function test_failed_login_is_audited_without_exposing_internal_reason_to_client(): void
     {
         User::create([
-            'name' => 'Petugas Test',
+            'name' => 'Kelurahan Test',
             'username' => 'petugas.test',
             'email' => 'petugas.test@example.com',
             'password' => Hash::make('StrongPass123!'),
-            'role' => 'petugas',
+            'role' => 'kelurahan',
             'is_active' => true,
         ]);
 
@@ -68,7 +68,7 @@ class AuthSecurityTest extends TestCase
             'username' => 'rate.test',
             'email' => 'rate.test@example.com',
             'password' => Hash::make('StrongPass123!'),
-            'role' => 'petugas',
+            'role' => 'kelurahan',
             'is_active' => true,
         ]);
 

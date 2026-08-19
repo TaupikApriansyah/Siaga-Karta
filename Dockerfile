@@ -33,6 +33,6 @@ RUN chmod +x /usr/local/bin/siagakarta-entrypoint \
     && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 WORKDIR /var/www/html
 EXPOSE 80
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD curl -fsS http://127.0.0.1/up || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=180s --retries=5 CMD curl -fsS http://127.0.0.1/up || exit 1
 ENTRYPOINT ["siagakarta-entrypoint"]
 CMD ["apache2-foreground"]

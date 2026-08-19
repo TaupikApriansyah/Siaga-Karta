@@ -119,6 +119,14 @@ class AuthController extends Controller
 
     private function userData(User $u): array
     {
-        return ['id'=>$u->id,'name'=>$u->name,'email'=>$u->email,'username'=>$u->username,'role'=>$u->role];
+        $u->loadMissing('region.parent');
+        return [
+            'id'=>$u->id,'name'=>$u->name,'email'=>$u->email,'username'=>$u->username,'role'=>$u->role,'region_id'=>$u->region_id,
+            'region'=>$u->region ? [
+                'id'=>$u->region->id,'code'=>$u->region->code,'short_code'=>$u->region->short_code,'name'=>$u->region->name,'level'=>$u->region->level,
+                'rt_count'=>$u->region->rt_count,'rw_count'=>$u->region->rw_count,
+                'parent'=>$u->region->parent ? ['id'=>$u->region->parent->id,'name'=>$u->region->parent->name,'short_code'=>$u->region->parent->short_code] : null,
+            ] : null,
+        ];
     }
 }

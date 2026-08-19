@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\AppNotification;
+use App\Models\Report;
+use App\Models\Region;
+use App\Services\ReportAccessService;
 use App\Services\RevisionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,12 +50,22 @@ class SystemController extends Controller
 
     public function activity(Request $request)
     {
-        $role=$request->attributes->get('api_user')->role;
+        $user=$request->attributes->get('api_user');
+        $role=$user->role;
         $q=AuditLog::query()->select('id','user_id','action','subject_type','subject_id','created_at')->with('user:id,name')->latest()->limit(20);
-        if($role==='petugas') $q->where(function($x){
-            $x->where('action','like','report.%')->orWhere('action','like','ambulance.%')
-              ->orWhere('action','like','transaction.%')->orWhere('action','like','infaq.%');
-        });
+        if(in_array($role,['kecamatan','kelurahan'],true)) {
+            $accessibleReportIds=ReportAccessService::scope(Report::query(),$user)->select('reports.id');
+            $q->where(function($x)use($accessibleReportIds,$user){
+                $x->where(function($r)use($accessibleReportIds){
+                    $r->where('subject_type',Report::class)->whereIn('subject_id',$accessibleReportIds);
+                });
+                if($user->role==='kelurahan' && $user->region_id) {
+                    $x->orWhere(function($r)use($user){
+                        $r->where('subject_type',Region::class)->where('subject_id',$user->region_id);
+                    });
+                }
+            });
+        }
         return response()->json(['activity'=>$q->get()->map(fn($a)=>['id'=>$a->id,'action'=>$a->action,'subject_type'=>$a->subject_type,'subject_id'=>$a->subject_id,'actor'=>$a->user?->name ?? 'Sistem','created_at'=>$a->created_at])]);
     }
 }

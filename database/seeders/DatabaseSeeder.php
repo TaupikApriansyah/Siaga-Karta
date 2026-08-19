@@ -6,6 +6,7 @@ use App\Models\Ambulance;
 use App\Models\Driver;
 use App\Models\InfaqSetting;
 use App\Models\Program;
+use App\Models\Region;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -25,16 +26,24 @@ class DatabaseSeeder extends Seeder
             throw new \RuntimeException('DEMO_PASSWORD minimal 8 karakter.');
         }
 
-        $admin=User::updateOrCreate(['username'=>'admin'],[
-            'name'=>'Administrator Demo','email'=>'admin@siagakarta.local',
-            'role'=>'admin','is_active'=>true,'password'=>$password,
+        $kotaRegion=Region::where('code','32.73')->first();
+        $andirRegion=Region::where('code','32.73.05')->first();
+        $dungusRegion=Region::where('code','32.73.05.1002')->first();
+
+        $kota=User::updateOrCreate(['username'=>'kota'],[
+            'name'=>'Karang Taruna Kota Bandung','email'=>'kota@siagakarta.local',
+            'role'=>'kota','region_id'=>$kotaRegion?->id,'is_active'=>true,'password'=>$password,
         ]);
-        $petugas=User::updateOrCreate(['username'=>'petugas'],[
-            'name'=>'Petugas Karang Taruna Demo','email'=>'petugas@siagakarta.local',
-            'role'=>'petugas','is_active'=>true,'password'=>$password,
+        User::updateOrCreate(['username'=>'kecamatan'],[
+            'name'=>'Karang Taruna Kecamatan Andir','email'=>'kecamatan@siagakarta.local',
+            'role'=>'kecamatan','region_id'=>$andirRegion?->id,'is_active'=>true,'password'=>$password,
         ]);
-        User::where('username','karta')->delete();
-        $this->command?->info('Akun demo sinkron: admin dan petugas menggunakan password DEMO_PASSWORD yang sama.');
+        User::updateOrCreate(['username'=>'kelurahan'],[
+            'name'=>'Karang Taruna Kelurahan Dungus Cariang','email'=>'kelurahan@siagakarta.local',
+            'role'=>'kelurahan','region_id'=>$dungusRegion?->id,'is_active'=>true,'password'=>$password,
+        ]);
+        User::whereIn('username',['admin','petugas','karta'])->delete();
+        $this->command?->info('Akun demo sinkron: kota, kecamatan, dan kelurahan menggunakan password DEMO_PASSWORD yang sama.');
 
         Ambulance::updateOrCreate(['code'=>'KT-01'],['plate_number'=>'Z 1992 AB','capacity'=>2,'status'=>'tersedia']);
         Ambulance::updateOrCreate(['code'=>'KT-02'],['plate_number'=>'Z 8812 XY','capacity'=>1,'status'=>'tersedia']);
@@ -53,12 +62,12 @@ class DatabaseSeeder extends Seeder
         Transaction::updateOrCreate(['code'=>'TRX-DEMO-001'],[
             'type'=>'pemasukan','category'=>'donasi_program','amount'=>1500000,'status'=>'verified','source'=>'internal',
             'program_id'=>$p1->id,'transaction_date'=>now()->startOfMonth()->toDateString(),
-            'created_by'=>$admin->id,'verified_by'=>$admin->id,'verified_at'=>now(),
+            'created_by'=>$kota->id,'verified_by'=>$kota->id,'verified_at'=>now(),
         ]);
         Transaction::updateOrCreate(['code'=>'TRX-DEMO-002'],[
             'type'=>'pengeluaran','category'=>'bbm','amount'=>250000,'status'=>'verified','source'=>'internal',
             'program_id'=>null,'transaction_date'=>now()->startOfMonth()->addDays(4)->toDateString(),
-            'created_by'=>$admin->id,'verified_by'=>$admin->id,'verified_at'=>now(),
+            'created_by'=>$kota->id,'verified_by'=>$kota->id,'verified_at'=>now(),
         ]);
 
         $totals=Transaction::where('program_id',$p1->id)->where('status','verified')
@@ -70,7 +79,7 @@ class DatabaseSeeder extends Seeder
             'title'=>'Infaq Siaga Karta',
             'description'=>'Dukungan operasional pelayanan sosial dan ambulans Karang Taruna.',
             'payment_instructions'=>'Gunakan QR atau rekening resmi, lalu unggah bukti pembayaran melalui portal warga.',
-            'is_active'=>false,'updated_by'=>$admin->id,
+            'is_active'=>false,'updated_by'=>$kota->id,
         ]);
     }
 }

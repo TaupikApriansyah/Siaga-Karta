@@ -11,7 +11,7 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'email', 'username', 'role', 'is_active', 'password'];
+    protected $fillable = ['name', 'email', 'username', 'role', 'region_id', 'is_active', 'password'];
     protected $hidden = ['password', 'remember_token'];
 
     protected function casts(): array
@@ -36,4 +36,5 @@ class User extends Authenticatable
     }
 
     public function apiTokens() { return $this->hasMany(ApiToken::class); }
+    public function region() { return $this->belongsTo(Region::class); }
 }

@@ -23,8 +23,8 @@ class RevisionService
     public static function snapshot(string $role): array
     {
         $wanted = match ($role) {
-            'admin' => ['operations','finance','users','settings'],
-            'petugas' => ['operations','finance','settings'],
+            'kota' => ['operations','finance','users','settings'],
+            'kecamatan', 'kelurahan' => ['operations'],
             default => [],
         };
         $rows = SystemRevision::query()->whereIn('scope',$wanted)->pluck('version','scope');

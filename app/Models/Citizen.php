@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Crypt;
 
 class Citizen extends Model
 {
-    protected $fillable = ['name','nik_encrypted','nik_hash','phone_encrypted','phone_hash','phone_last4'];
-    protected $hidden = ['nik_encrypted','nik_hash','phone_encrypted','phone_hash'];
+    protected $fillable = ['name','nik_encrypted','nik_hash','phone_encrypted','phone_hash','phone_last4','email_encrypted','email_hash'];
+    protected $hidden = ['nik_encrypted','nik_hash','phone_encrypted','phone_hash','email_encrypted','email_hash'];
 
     public static function fingerprint(string $value): string
     {
@@ -28,7 +28,15 @@ class Citizen extends Model
         $this->phone_last4 = substr($phone, -4);
     }
 
+    public function setEmail(?string $email): void
+    {
+        $email = strtolower(trim((string)$email));
+        $this->email_encrypted = $email === '' ? null : Crypt::encryptString($email);
+        $this->email_hash = $email === '' ? null : self::fingerprint($email);
+    }
+
     public function getNik(): string { return Crypt::decryptString($this->nik_encrypted); }
     public function getPhone(): string { return Crypt::decryptString($this->phone_encrypted); }
+    public function getEmail(): ?string { return $this->email_encrypted ? Crypt::decryptString($this->email_encrypted) : null; }
     public function reports() { return $this->hasMany(Report::class); }
 }
