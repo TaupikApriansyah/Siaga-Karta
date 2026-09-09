@@ -31,7 +31,7 @@ class UserController extends Controller
             'name'=>'required|string|max:120',
             'email'=>'required|email|max:190|unique:users,email',
             'username'=>'required|string|min:4|max:60|regex:/^[a-z0-9._-]+$/|unique:users,username',
-            'role'=>'required|in:kecamatan,kelurahan',
+            'role'=>'required|in:kecamatan,kelurahan,bendahara',
             'region_id'=>'required|integer|exists:regions,id',
             'password'=>'required|string|min:10|max:200',
         ]);
@@ -53,7 +53,7 @@ class UserController extends Controller
             'name'=>'sometimes|string|max:120',
             'email'=>['sometimes','email','max:190',Rule::unique('users','email')->ignore($user->id)],
             'username'=>['sometimes','string','min:4','max:60','regex:/^[a-z0-9._-]+$/',Rule::unique('users','username')->ignore($user->id)],
-            'role'=>'sometimes|in:kota,kecamatan,kelurahan',
+            'role'=>'sometimes|in:kota,kecamatan,kelurahan,bendahara',
             'region_id'=>'sometimes|nullable|integer|exists:regions,id',
             'is_active'=>'sometimes|boolean',
             'password'=>'nullable|string|min:10|max:200',
@@ -76,7 +76,7 @@ class UserController extends Controller
         if($nextRole==='kota') {
             if($nextRegion) $this->assertRegionMatchesRole((int)$nextRegion,'kota');
         } else {
-            if(!$nextRegion) return response()->json(['message'=>'Wilayah wajib dipilih untuk akun Kecamatan/Kelurahan.'],422);
+            if(!$nextRegion) return response()->json(['message'=>'Wilayah wajib dipilih untuk akun Kecamatan, Kelurahan, atau Bendahara.'],422);
             $this->assertRegionMatchesRole((int)$nextRegion,$nextRole);
         }
 
@@ -117,8 +117,11 @@ class UserController extends Controller
     private function assertRegionMatchesRole(int $regionId, string $role): void
     {
         $region=Region::findOrFail($regionId);
-        if($region->level!==$role) {
-            abort(422,"Wilayah yang dipilih harus bertipe {$role} untuk role {$role}.");
+        $allowed = $role === 'bendahara'
+            ? ['kota','kecamatan','kelurahan']
+            : [$role];
+        if(!in_array($region->level, $allowed, true)) {
+            abort(422,"Wilayah tidak sesuai untuk role {$role}.");
         }
         if(!$region->is_active) abort(422,'Wilayah yang dipilih sedang nonaktif.');
     }

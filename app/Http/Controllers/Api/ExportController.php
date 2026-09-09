@@ -10,6 +10,14 @@ use Illuminate\Http\Request;
 
 class ExportController extends Controller
 {
+
+    private function allowedFinanceRegionIds($user): array
+    {
+        if (!$user?->region_id) return [];
+        $regionId=(int)$user->region_id;
+        return \App\Models\Region::query()->whereKey($regionId)->where('is_active',true)->exists() ? [$regionId] : [];
+    }
+
     private function safeCell(mixed $value): mixed
     {
         if (!is_string($value)) return $value;
@@ -63,12 +71,13 @@ class ExportController extends Controller
         return response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'attachment; filename="laporan-pelayanan-warga-'.now()->format('Ymd-His').'.pdf"','Cache-Control'=>'private, no-store']);
     }
 
-    public function financeCsv()
+    public function financeCsv(Request $request)
     {
-        return response()->streamDownload(function(){
+        $user=$request->attributes->get('api_user');
+        return response()->streamDownload(function() use($user){
             $o=fopen('php://output','w'); fwrite($o,"\xEF\xBB\xBF");
             $this->putRow($o,['Kode','Tanggal','Tipe','Kategori','Nominal','Status','Sumber','Nama Pembayar','Kontak Akhir','Program','Keterangan']);
-            Transaction::with('program:id,name')->lazyByIdDesc(500)->each(function($t)use($o){
+            Transaction::with('program:id,name')->whereIn('region_id', $this->allowedFinanceRegionIds($user))->lazyByIdDesc(500)->each(function($t)use($o){
                 $this->putRow($o,[$t->code,$t->transaction_date->format('Y-m-d'),$t->type,$t->category,$t->amount,$t->status,$t->source,$t->payer_name,$t->payer_phone_last4?('****'.$t->payer_phone_last4):null,$t->program?->name,$t->description]);
             });
             fclose($o);
@@ -87,9 +96,9 @@ class ExportController extends Controller
 
     public function financePdf(Request $request)
     {
-        abort_unless($request->attributes->get('api_user')->role === 'kota',403);
-        $rows=Transaction::latest('transaction_date')->latest('id')->limit(1500)->get();
-        $saldo=(int)Transaction::where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
+        $user=$request->attributes->get('api_user');
+        $rows=Transaction::whereIn('region_id', $this->allowedFinanceRegionIds($user))->latest('transaction_date')->latest('id')->limit(1500)->get();
+        $saldo=(int)Transaction::whereIn('region_id', $this->allowedFinanceRegionIds($user))->where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
         $lines=['SALDO TERVERIFIKASI: Rp '.number_format($saldo,0,',','.')];
         foreach($rows as $t)$lines[]=sprintf('%s | %s | %s | %s | Rp %s | %s | %s | %s',$t->code,$t->transaction_date->format('d-m-Y'),$t->type,$t->category,number_format($t->amount,0,',','.'),$t->status,$t->source,$t->payer_name??'-');
         $pdf=SimplePdf::make('Laporan Keuangan dan Kas Infaq',$lines);

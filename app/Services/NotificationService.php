@@ -16,6 +16,17 @@ class NotificationService
             return;
         }
 
+        if ($subject && in_array($action, [
+            'transaction.created',
+            'transaction.verified',
+            'transaction.rejected',
+            'infaq.payment_submitted',
+            'infaq.settings_updated'
+        ], true)) {
+            self::financeNotification($request, $action, $subject, $metadata);
+            return;
+        }
+
         $definition = self::definition($action, $subject, $metadata);
         if (!$definition) return;
 
@@ -96,6 +107,40 @@ class NotificationService
             'updated_at' => $now,
         ], $recipientIds);
         AppNotification::insert($rows);
+    }
+
+
+    private static function financeNotification(Request $request, string $action, object $subject, array $metadata): void
+    {
+        $subject->loadMissing('region.parent');
+        $actorId = $request->attributes->get('api_user')?->id;
+        $regionId = $subject->region_id ?? null;
+        $region = $subject->region ?? null;
+        $code = $subject->code ?? '';
+
+        if (!$regionId) return;
+
+        // Finance is strictly isolated per region. Only the regional manager
+        // and treasurer assigned to this exact region receive finance notices.
+        $query = User::query()
+            ->where('is_active', true)
+            ->where('region_id', (int)$regionId)
+            ->whereIn('role', ['kota','kecamatan','kelurahan','bendahara']);
+
+        if ($actorId) $query->where('id','!=',$actorId);
+        $ids=$query->pluck('id')->all();
+        if(!$ids) return;
+
+        [$title,$message]=match($action){
+            'infaq.payment_submitted'=>['Pembayaran infaq masuk',"{$code} menunggu verifikasi pengelola wilayah terkait."],
+            'transaction.created'=>['Transaksi baru',"{$code} menunggu proses verifikasi bendahara wilayah."],
+            'transaction.verified'=>['Transaksi terverifikasi',"{$code} telah diverifikasi dan masuk pencatatan kas."],
+            'transaction.rejected'=>['Transaksi ditolak',"{$code} ditolak. Silakan periksa catatan verifikasi."],
+            'infaq.settings_updated'=>['Pengaturan pembayaran berubah','QR atau rekening pembayaran wilayah ini baru saja diperbarui.'],
+            default=>['Pembaruan keuangan',"{$code} memiliki pembaruan."],
+        };
+
+        self::insertRows($ids,'finance',$title,$message,'kas',$subject);
     }
 
     private static function definition(string $action, ?object $subject, array $metadata): ?array

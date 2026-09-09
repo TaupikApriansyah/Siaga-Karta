@@ -42,7 +42,17 @@ class PublicController extends Controller
                 'report_priorities'=>Report::PRIORITIES,
                 'demo'=>filter_var(env('DEMO_MODE',false), FILTER_VALIDATE_BOOL) ? [
                     'enabled'=>true,
-                    'usernames'=>['kota','kecamatan','kelurahan'],
+                    // Keep usernames for backward compatibility, while accounts supplies
+                    // explicit labels for one-click demo selection in the login UI.
+                    'usernames'=>['kota','kecamatan','kelurahan','bendahara_kota','bendahara_kecamatan','bendahara_kelurahan'],
+                    'accounts'=>[
+                        ['username'=>'kota','label'=>'Kota'],
+                        ['username'=>'kecamatan','label'=>'Kecamatan'],
+                        ['username'=>'kelurahan','label'=>'Kelurahan'],
+                        ['username'=>'bendahara_kota','label'=>'Bendahara Kota'],
+                        ['username'=>'bendahara_kecamatan','label'=>'Bendahara Kecamatan'],
+                        ['username'=>'bendahara_kelurahan','label'=>'Bendahara Kelurahan'],
+                    ],
                     'password'=>(string)env('DEMO_PASSWORD','Rajawali21'),
                 ] : ['enabled'=>false],
             ];
@@ -55,6 +65,17 @@ class PublicController extends Controller
             ->with('parent:id,code,short_code,name,level')
             ->orderBy('name')->get(['id','code','short_code','name','parent_id']);
         return response()->json(['kelurahan'=>$rows]);
+    }
+
+    public function infaqRegions()
+    {
+        $rows=Region::query()->whereIn('level',['kecamatan','kelurahan'])
+            ->where('is_active',true)
+            ->whereHas('infaqSetting',fn($q)=>$q->where('is_active',true))
+            ->with('parent:id,code,short_code,name,level')
+            ->orderBy('level')->orderBy('name')
+            ->get(['id','code','short_code','name','level','parent_id']);
+        return response()->json(['regions'=>$rows]);
     }
 
     public function storeReport(Request $request)

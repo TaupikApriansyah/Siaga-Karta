@@ -23,7 +23,7 @@ class DashboardController extends Controller
         $role=$user->role;
         $canOperations=in_array($role,['kota','kecamatan','kelurahan'],true);
         $canCityResources=$role==='kota';
-        $canFinance=$role==='kota';
+        $canFinance=in_array('finance.view', config('permissions.roles.'.$role, []), true);
 
         $reportScope=fn()=>ReportAccessService::scope(Report::query(),$user);
 
@@ -58,15 +58,24 @@ class DashboardController extends Controller
                     });
                 }
             });
+        } elseif($role==='bendahara') {
+            // Bendahara only receives finance activity from the exact region attached to
+            // the account. Kecamatan/Kelurahan cash must never bleed into another level.
+            $accessibleTransactionIds=Transaction::query()->where('region_id',(int)$user->region_id)->select('transactions.id');
+            $activityQuery->where('subject_type',Transaction::class)->whereIn('subject_id',$accessibleTransactionIds);
         }
 
         $saldo=$pemasukan=$pengeluaran=null;
         $financePending=0;
         if($canFinance){
-            $saldo=(int)Transaction::where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
-            $pemasukan=(int)Transaction::where('status','verified')->where('type','pemasukan')->whereBetween('transaction_date',[now()->startOfMonth()->toDateString(),now()->endOfMonth()->toDateString()])->sum('amount');
-            $pengeluaran=(int)Transaction::where('status','verified')->where('type','pengeluaran')->whereBetween('transaction_date',[now()->startOfMonth()->toDateString(),now()->endOfMonth()->toDateString()])->sum('amount');
-            $financePending=Transaction::where('status','pending')->count();
+            // Kas is isolated per Region record. A Kota account sees Kota cash only,
+            // Kecamatan sees Kecamatan cash only, and Kelurahan sees Kelurahan cash only.
+            $financeRegionId=(int)$user->region_id;
+            $financeQuery = fn()=>Transaction::where('region_id',$financeRegionId);
+            $saldo=(int)$financeQuery()->where('status','verified')->selectRaw("coalesce(sum(case when type='pemasukan' then amount else -amount end),0) s")->value('s');
+            $pemasukan=(int)$financeQuery()->where('status','verified')->where('type','pemasukan')->whereBetween('transaction_date',[now()->startOfMonth()->toDateString(),now()->endOfMonth()->toDateString()])->sum('amount');
+            $pengeluaran=(int)$financeQuery()->where('status','verified')->where('type','pengeluaran')->whereBetween('transaction_date',[now()->startOfMonth()->toDateString(),now()->endOfMonth()->toDateString()])->sum('amount');
+            $financePending=(int)$financeQuery()->where('status','pending')->count();
         }
 
         $activeReports=$canOperations?$reportScope()->whereNotIn('status',['selesai','ditolak'])->count():null;
@@ -105,11 +114,23 @@ class DashboardController extends Controller
         $this->applyMapFilters($unmappedQuery,$data);
         $unmappedReports=(clone $unmappedQuery)->count();
 
-        $total=(clone $base)->count();
-        $today=(clone $base)->whereDate('created_at',today())->count();
-        $processing=(clone $base)->whereIn('status',['diproses','dijemput'])->count();
-        $completed=(clone $base)->where('status','selesai')->count();
-        $emergency=(clone $base)->where('priority','darurat')->count();
+        // Compute the headline counters in one portable aggregate query instead of
+        // issuing five scans of the filtered reports set. CASE works on MySQL and SQLite.
+        $todayStart=now()->startOfDay();
+        $tomorrowStart=$todayStart->copy()->addDay();
+        $summary=(clone $base)->selectRaw(
+            "count(*) as total,
+             coalesce(sum(case when created_at >= ? and created_at < ? then 1 else 0 end),0) as today,
+             coalesce(sum(case when status in ('diproses','dijemput') then 1 else 0 end),0) as processing,
+             coalesce(sum(case when status = 'selesai' then 1 else 0 end),0) as completed,
+             coalesce(sum(case when priority = 'darurat' then 1 else 0 end),0) as emergency",
+            [$todayStart,$tomorrowStart]
+        )->first();
+        $total=(int)($summary?->total??0);
+        $today=(int)($summary?->today??0);
+        $processing=(int)($summary?->processing??0);
+        $completed=(int)($summary?->completed??0);
+        $emergency=(int)($summary?->emergency??0);
 
         $categoryRows=(clone $base)->selectRaw('category, count(*) total')->groupBy('category')->orderByDesc('total')->get();
         $categoryDistribution=$categoryRows->map(fn($row)=>[
@@ -117,8 +138,10 @@ class DashboardController extends Controller
             'percentage'=>$total>0?round(((int)$row->total/$total)*100,1):0,
         ])->values();
 
-        $kelurahanTotals=(clone $base)->selectRaw('region_id, count(*) total')->groupBy('region_id')->pluck('total','region_id');
         $kelurahanCategoryRows=(clone $base)->selectRaw('region_id, category, count(*) total')->groupBy('region_id','category')->get()->groupBy('region_id');
+        // Category rows already contain every report count per region, so derive the
+        // regional totals in memory and avoid a redundant GROUP BY query.
+        $kelurahanTotals=$kelurahanCategoryRows->map(fn($rows)=>(int)$rows->sum('total'));
 
         $kelurahanQuery=Region::query()->where('level','kelurahan')->where('is_active',true)->with('parent:id,code,short_code,name,level');
         if(!empty($data['kecamatan_id'])) $kelurahanQuery->where('parent_id',$data['kecamatan_id']);

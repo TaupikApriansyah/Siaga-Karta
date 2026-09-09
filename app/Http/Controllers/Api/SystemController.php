@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\AppNotification;
 use App\Models\Report;
 use App\Models\Region;
+use App\Models\Transaction;
 use App\Services\ReportAccessService;
 use App\Services\RevisionService;
 use Illuminate\Http\Request;
@@ -65,6 +66,9 @@ class SystemController extends Controller
                     });
                 }
             });
+        } elseif($role==='bendahara') {
+            $accessibleTransactionIds=Transaction::query()->where('region_id',(int)$user->region_id)->select('transactions.id');
+            $q->where('subject_type',Transaction::class)->whereIn('subject_id',$accessibleTransactionIds);
         }
         return response()->json(['activity'=>$q->get()->map(fn($a)=>['id'=>$a->id,'action'=>$a->action,'subject_type'=>$a->subject_type,'subject_id'=>$a->subject_id,'actor'=>$a->user?->name ?? 'Sistem','created_at'=>$a->created_at])]);
     }

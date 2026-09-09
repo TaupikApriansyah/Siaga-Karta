@@ -20,8 +20,10 @@ Route::prefix('public')->group(function(){
     Route::get('/reports/{code}',[PublicController::class,'track'])->middleware('throttle:20,1');
     Route::post('/bot',[PublicController::class,'bot'])->middleware('throttle:30,1');
     Route::get('/regions',[PublicController::class,'regions'])->middleware('throttle:60,1');
+    Route::get('/infaq/regions',[PublicController::class,'infaqRegions'])->middleware('throttle:60,1');
     Route::get('/infaq',[InfaqController::class,'publicInfo'])->middleware('throttle:60,1');
     Route::get('/infaq/qr',[InfaqController::class,'publicQr'])->middleware('throttle:60,1');
+    Route::get('/infaq/{region}',[InfaqController::class,'publicInfo'])->middleware('throttle:60,1');
     Route::post('/infaq/payments',[InfaqController::class,'submitPayment'])->middleware('throttle:5,1');
 });
 
@@ -98,12 +100,12 @@ Route::middleware('api.token')->group(function(){
     });
     Route::middleware('permission:finance.manage')->group(function(){
         Route::post('/transactions',[FinanceController::class,'store']);
-        Route::post('/transactions/{transaction}/verify',[FinanceController::class,'verify']);
-        Route::post('/transactions/{transaction}/reject',[FinanceController::class,'reject']);
     });
-    Route::middleware('permission:payment.manage')->group(function(){
-        Route::get('/infaq/settings',[InfaqController::class,'settings']);
-        Route::post('/infaq/settings',[InfaqController::class,'updateSettings']);
-        Route::get('/infaq/qr',[InfaqController::class,'privateQr']);
-    });
+    Route::post('/transactions/{transaction}/verify',[FinanceController::class,'verify'])->middleware('permission:finance.manage,finance.verify');
+    Route::post('/transactions/{transaction}/reject',[FinanceController::class,'reject'])->middleware('permission:finance.manage,finance.reject');
+    // Read-only access is available to managers and bendahara. Keep write access
+    // strictly behind infaq.manage so infaq.view never escalates to configuration changes.
+    Route::get('/infaq/settings',[InfaqController::class,'settings'])->middleware('permission:infaq.manage,infaq.view');
+    Route::get('/infaq/qr',[InfaqController::class,'privateQr'])->middleware('permission:infaq.manage,infaq.view');
+    Route::post('/infaq/settings',[InfaqController::class,'updateSettings'])->middleware('permission:infaq.manage');
 });
