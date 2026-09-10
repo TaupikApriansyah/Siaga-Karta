@@ -117,8 +117,16 @@ class ReportController extends Controller
         if($data['category']==='ambulans') {
             if(empty($data['medical_condition'])) return response()->json(['message'=>'Kondisi medis wajib diisi untuk layanan ambulans.'],422);
             if($data['type']==='terjadwal' && empty($data['scheduled_at'])) return response()->json(['message'=>'Jadwal jemput wajib diisi untuk ambulans terjadwal.'],422);
+
+            if($data['type']==='darurat') {
+                $data['priority']='darurat';
+            }
         } else {
+            if($data['priority']==='darurat') {
+                return response()->json(['message'=>'Kategori selain ambulans tidak dapat menggunakan status darurat.'],422);
+            }
             if(empty($data['description'])) return response()->json(['message'=>'Isi pengaduan wajib diisi untuk kategori non-ambulans.'],422);
+            // Prioritas darurat sudah ditolak untuk kategori non-ambulans di atas.
             $data['type']=null; $data['scheduled_at']=null; $data['service_duration_minutes']=null; $data['destination']=null; $data['medical_condition']=null;
         }
         if(!NikValidator::isValid($data['nik'])) return response()->json(['message'=>'NIK tidak valid.','errors'=>['nik'=>['NIK tidak lolos pemeriksaan struktur.']]],422);

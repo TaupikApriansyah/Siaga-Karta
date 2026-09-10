@@ -8,11 +8,12 @@ SIAGA KARTA mengelola pengaduan warga melalui struktur Karang Taruna tingkat **K
 
 | Tingkat | Hak akses utama |
 |---|---|
-| **Karang Taruna Kota** | Monitoring seluruh Kecamatan/Kelurahan, peta sebaran Kota Bandung, tindak lanjut laporan yang telah tervalidasi Kecamatan, rujukan OPD, operasional ambulans, keuangan, laporan, dan manajemen akun Kecamatan/Kelurahan. |
-| **Karang Taruna Kecamatan** | Melihat pengaduan dalam Kecamatan sendiri dan melakukan **validasi / cross-check** terhadap pengaduan yang telah diajukan oleh Kelurahan. Tidak memiliki akses keuangan, manajemen pengguna, atau pengelolaan ambulans. |
-| **Karang Taruna Kelurahan** | Menerima/mencatat pengaduan warga atau RT/RW, melakukan verifikasi awal, mengajukan ke Kecamatan, menangani perbaikan data, dan menyesuaikan jumlah RT/RW wilayah sendiri. |
+| **Karang Taruna Kota** | Monitoring seluruh Kecamatan/Kelurahan, peta sebaran Kota Bandung, tindak lanjut laporan yang telah tervalidasi Kecamatan, rujukan OPD, operasional ambulans, **Kas Kota**, laporan, dan manajemen akun wilayah/Bendahara. |
+| **Karang Taruna Kecamatan** | Melihat pengaduan dalam Kecamatan sendiri, melakukan **validasi / cross-check**, serta mengelola **Kas Kecamatan**. Kas Kecamatan hanya dapat dilihat akun Kecamatan dan Bendahara yang terikat ke Kecamatan yang sama. |
+| **Karang Taruna Kelurahan** | Menerima/mencatat pengaduan warga atau RT/RW, melakukan verifikasi awal, mengajukan ke Kecamatan, menangani perbaikan data, menyesuaikan jumlah RT/RW, serta mengelola **Kas Kelurahan**. Kas hanya terlihat pada Kelurahan tersebut dan Bendahara yang terikat ke Kelurahan yang sama. |
+| **Bendahara** | Akses keuangan read/verify sesuai **satu region_id** yang terikat ke akun. Bendahara dapat melihat transaksi, bukti, rekening/QR resmi, mengekspor laporan kas, serta memverifikasi/menolak transaksi pending. Bendahara tidak dapat mengubah pengaturan pembayaran atau membuat transaksi internal. |
 
-Role internal yang digunakan hanya: `kota`, `kecamatan`, dan `kelurahan`.
+Role internal yang digunakan: `kota`, `kecamatan`, `kelurahan`, dan `bendahara`.
 
 ## Alur pengaduan
 
@@ -123,13 +124,16 @@ Perintah ini hanya menyinkronkan master wilayah dan **tidak membuat akun penggun
 
 ## Akun awal/demo
 
-Seeder hanya membuat tiga akun role sesuai skenario pilot apabila `DEMO_MODE=true`:
+Seeder membuat akun demo pengelola wilayah dan Bendahara apabila `DEMO_MODE=true`:
 
 - `kota` — Karang Taruna Kota Bandung
 - `kecamatan` — Karang Taruna Kecamatan Andir
 - `kelurahan` — Karang Taruna Kelurahan Dungus Cariang
+- `bendahara_kota` — Bendahara Kota Bandung
+- `bendahara_kecamatan` — Bendahara Kecamatan Andir
+- `bendahara_kelurahan` — Bendahara Kelurahan Dungus Cariang
 
-Password demo berasal dari `DEMO_PASSWORD`. Jangan aktifkan credential demo pada production.
+Username lama `bendahara` tetap dipertahankan sebagai alias Bendahara Kecamatan Andir agar instalasi demo sebelumnya tidak putus. Password seluruh akun demo berasal dari `DEMO_PASSWORD`. Jangan aktifkan credential demo pada production.
 
 Untuk membuat akun Kota production secara interaktif tanpa password default:
 
@@ -137,7 +141,7 @@ Untuk membuat akun Kota production secara interaktif tanpa password default:
 php artisan siagakarta:create-kota
 ```
 
-Akun Kecamatan dan Kelurahan selanjutnya dibuat oleh role Kota melalui menu **Manajemen Pengguna**, dan wajib diikat ke wilayah dengan level yang sesuai.
+Akun Kecamatan, Kelurahan, dan Bendahara selanjutnya dibuat oleh role Kota melalui menu **Manajemen Pengguna**. Setiap Bendahara wajib diikat tepat ke satu wilayah Kota, Kecamatan, atau Kelurahan.
 
 ## Konfigurasi email
 
@@ -205,4 +209,12 @@ Project tetap menggunakan mekanisme revision/sync yang sudah tersedia. Frontend 
 7. Login Kelurahan dan ajukan ke Kecamatan.
 8. Login Kecamatan dan validasi ke Kota.
 9. Login Kota dan periksa marker/statistik peta tanpa refresh browser.
-10. Pastikan role Kecamatan/Kelurahan tidak dapat mengakses keuangan, manajemen pengguna, atau operasi Kota yang tidak menjadi kewenangannya.
+10. Pastikan Kas Kota, Kecamatan, dan Kelurahan saling terisolasi. Akun wilayah dan Bendahara hanya boleh melihat transaksi dengan `region_id` yang sama. Kecamatan/Kelurahan tetap tidak dapat mengakses manajemen pengguna atau operasi Kota yang bukan kewenangannya.
+
+
+## Revisi Role & Kas Terpisah
+
+- Sistem menggunakan role wilayah Kota, Kecamatan, Kelurahan, serta role Bendahara yang diikat ke satu wilayah.
+- Warga menggunakan akses publik untuk membuat dan melacak laporan tanpa role dashboard.
+- Kas bersifat internal per wilayah: Kas Kota, Kas Kecamatan, dan Kas Kelurahan tidak saling melihat. Akses diberikan hanya kepada pengelola wilayah tersebut dan Bendahara dengan `region_id` yang sama.
+- Modul infaq/QR rekening tetap dipertahankan sebagai fitur terpisah dan tidak dicampur dengan kas internal.

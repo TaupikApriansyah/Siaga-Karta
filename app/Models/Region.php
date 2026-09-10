@@ -21,8 +21,23 @@ class Region extends Model
 
     public function parent() { return $this->belongsTo(self::class, 'parent_id'); }
     public function children() { return $this->hasMany(self::class, 'parent_id'); }
+
+    public function descendantIds(bool $includeSelf = true): array
+    {
+        $ids = $includeSelf ? [$this->id] : [];
+        $queue = [$this->id];
+        while ($queue) {
+            $children = self::query()->whereIn('parent_id', $queue)->pluck('id')->all();
+            $children = array_values(array_diff($children, $ids));
+            if (!$children) break;
+            $ids = array_merge($ids, $children);
+            $queue = $children;
+        }
+        return $ids;
+    }
     public function users() { return $this->hasMany(User::class); }
     public function reports() { return $this->hasMany(Report::class); }
+    public function infaqSetting() { return $this->hasOne(InfaqSetting::class); }
 
     public function district(): ?self
     {

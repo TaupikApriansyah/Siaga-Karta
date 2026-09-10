@@ -1,0 +1,1 @@
+Siaga Karta v23 patch: ReportController dead validation cleanup and ambulance location route security middleware fix.

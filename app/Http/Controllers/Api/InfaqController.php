@@ -4,19 +4,22 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InfaqSetting;
 use App\Models\Transaction;
+use App\Models\Region;
 use App\Services\AuditService;
 use App\Services\RevisionService;
 use App\Services\StatusHistoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Traits\RegionScope;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class InfaqController extends Controller
 {
-    public function publicInfo()
+    use RegionScope;
+    public function publicInfo(?Region $region=null)
     {
-        $s=InfaqSetting::first();
+        $s=$region ? InfaqSetting::where('region_id',$region->id)->first() : null;
         $hasQr=(bool)($s?->qr_path && Storage::disk('local')->exists($s->qr_path));
         $hasAccount=(bool)($s?->bank_name && $s?->account_number && $s?->account_name);
         return response()->json(['infaq'=>[
@@ -33,9 +36,11 @@ class InfaqController extends Controller
         ]]);
     }
 
-    public function publicQr()
+    public function publicQr(Request $r)
     {
-        $s=InfaqSetting::where('is_active',true)->firstOrFail();
+        $regionId=$r->query('region_id');
+        abort_unless($regionId, 422, 'region_id wajib dipilih.');
+        $s=InfaqSetting::where('region_id',$regionId)->where('is_active',true)->firstOrFail();
         abort_unless($s->qr_path && Storage::disk('local')->exists($s->qr_path),404);
         return response()->file(Storage::disk('local')->path($s->qr_path),[
             'Cache-Control'=>'public, max-age=300','X-Content-Type-Options'=>'nosniff'
@@ -44,11 +49,8 @@ class InfaqController extends Controller
 
     public function submitPayment(Request $r)
     {
-        $setting=InfaqSetting::where('is_active',true)->first();
-        $hasChannel=$setting && (($setting->qr_path && Storage::disk('local')->exists($setting->qr_path)) || ($setting->bank_name && $setting->account_number && $setting->account_name));
-        if(!$hasChannel) return response()->json(['message'=>'Pembayaran infaq belum diaktifkan.'],422);
-
         $d=$r->validate([
+            'region_id'=>'required|exists:regions,id',
             'request_uuid'=>'nullable|uuid',
             'payer_name'=>'required|string|min:3|max:120',
             'payer_phone'=>['required','string','max:20','regex:/^(?:\+62|62|0)8[1-9][0-9]{6,11}$/'],
@@ -57,6 +59,11 @@ class InfaqController extends Controller
             'payment_proof'=>'required|image|mimes:jpg,jpeg,png,webp|max:5120|dimensions:max_width=5000,max_height=5000',
             'website'=>'nullable|string|max:0',
         ]);
+        $setting=InfaqSetting::where('region_id',$d['region_id'])->where('is_active',true)->first();
+        $hasChannel=$setting && (($setting->qr_path && Storage::disk('local')->exists($setting->qr_path)) || ($setting->bank_name && $setting->account_number && $setting->account_name));
+        if(!$hasChannel) return response()->json(['message'=>'Pembayaran infaq belum diaktifkan.'],422);
+
+        
         if(!empty($d['request_uuid']) && ($existing=Transaction::where('request_uuid',$d['request_uuid'])->first())) {
             return response()->json(['message'=>'Bukti pembayaran sudah diterima sebelumnya.','payment_code'=>$existing->code,'status'=>$existing->status]);
         }
@@ -76,6 +83,7 @@ class InfaqController extends Controller
                     'code'=>$code,'type'=>'pemasukan','category'=>'infaq','amount'=>$d['amount'],'status'=>'pending','source'=>'public_infaq',
                     'payer_name'=>trim($d['payer_name']),'description'=>$d['description']??'Infaq warga','transaction_date'=>now()->toDateString(),
                     'payment_proof_path'=>$proof,'payment_proof_hash'=>$proofHash,
+                    'region_id'=>$setting?->region_id,
                 ]);
                 $t->setPayerPhone($phone); $t->save();
                 StatusHistoryService::record($r,$t,null,'pending');
@@ -96,9 +104,10 @@ class InfaqController extends Controller
         return response()->json(['message'=>'Bukti pembayaran berhasil dikirim dan menunggu verifikasi.','payment_code'=>$t->code,'status'=>'pending'],201);
     }
 
-    public function settings()
+    public function settings(Request $request)
     {
-        $s=InfaqSetting::first();
+        $user=$request->attributes->get('api_user');
+        $s=InfaqSetting::where('region_id',$user->region_id)->first();
         return response()->json(['setting'=>$s ? [
             'id'=>$s->id,'title'=>$s->title,'description'=>$s->description,'payment_instructions'=>$s->payment_instructions,
             'bank_name'=>$s->bank_name,'account_number'=>$s->account_number,'account_name'=>$s->account_name,'is_active'=>(bool)$s->is_active,
@@ -120,7 +129,8 @@ class InfaqController extends Controller
             'remove_qr'=>'nullable|boolean',
             'qr'=>'nullable|image|mimes:jpg,jpeg,png,webp|max:5120|dimensions:max_width=5000,max_height=5000',
         ]);
-        $s=InfaqSetting::first() ?? new InfaqSetting();
+        $user=$r->attributes->get('api_user');
+        $s=InfaqSetting::firstOrNew(['region_id'=>$user->region_id]);
         $before=$s->exists?$s->only('title','description','bank_name','account_number','account_name','payment_instructions','is_active','qr_path'):null;
 
         $bankName=trim((string)($d['bank_name']??'')) ?: null;
@@ -171,15 +181,23 @@ class InfaqController extends Controller
 
     public function privateQr(Request $r)
     {
-        $s=InfaqSetting::firstOrFail();
+        $user=$r->attributes->get('api_user');
+        $s=InfaqSetting::where('region_id',$user->region_id)->firstOrFail();
         abort_unless($s->qr_path && Storage::disk('local')->exists($s->qr_path),404);
         return response()->file(Storage::disk('local')->path($s->qr_path),['Cache-Control'=>'private, no-store']);
     }
 
     public function proof(Request $r, Transaction $transaction)
     {
+        $this->assertTransactionAccess($r, $transaction);
         abort_unless($transaction->payment_proof_path && Storage::disk('local')->exists($transaction->payment_proof_path),404);
         AuditService::log($r,'infaq.proof_viewed',$transaction);
         return response()->file(Storage::disk('local')->path($transaction->payment_proof_path),['Cache-Control'=>'private, no-store']);
+    }
+
+    private function assertTransactionAccess(Request $r, Transaction $transaction): void
+    {
+        $user=$r->attributes->get('api_user');
+        abort_unless(in_array((int)$transaction->region_id, $this->allowedRegionIds($user), true),403,'Transaksi bukan kas wilayah Anda.');
     }
 }

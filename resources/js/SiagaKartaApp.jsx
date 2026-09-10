@@ -13,7 +13,9 @@ import api, { errorMessage, getToken, setToken, getAuthMeta, setAuthMeta, newReq
 const emptyChartData = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(name=>({name,darurat:0,sosial:0}));
 
 const STAFF_ROLES = ['kota','kecamatan','kelurahan'];
-const ROLE_LABELS = { kota:'Kota', kecamatan:'Kecamatan', kelurahan:'Kelurahan' };
+const INTERNAL_ROLES = [...STAFF_ROLES,'bendahara'];
+const FINANCE_ROLES = ['kota','kecamatan','kelurahan','bendahara'];
+const ROLE_LABELS = { kota:'Kota', kecamatan:'Kecamatan', kelurahan:'Kelurahan', bendahara:'Bendahara' };
 const roleDisplay = (role) => ROLE_LABELS[role] || role || '-';
 const REPORT_CATEGORIES = [
   ['kesehatan','Kesehatan'],['bpjs','BPJS'],['ambulans','Ambulans'],['lansia_disabilitas','Lansia / Disabilitas'],
@@ -345,6 +347,8 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
   const [trackLoading, setTrackLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [infaqInfo, setInfaqInfo] = useState({ active:false, title:'Infaq Siaga Karta', description:'', payment_instructions:'', has_qr:false, qr_url:null, bank_name:null, account_number:null, account_name:null });
+  const [infaqRegions, setInfaqRegions] = useState([]);
+  const [infaqRegionId, setInfaqRegionId] = useState('');
   const [infaqSubmitting, setInfaqSubmitting] = useState(false);
   const [infaqCode, setInfaqCode] = useState('');
   const [reportError, setReportError] = useState('');
@@ -353,12 +357,16 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
   const reportRequestUuidRef = useRef(newRequestUuid());
   const infaqRequestUuidRef = useRef(newRequestUuid());
 
-  const loadInfaqInfo = async () => {
-    try { const {data}=await api.get('/public/infaq'); setInfaqInfo(data.infaq || {}); } catch {}
+  const loadInfaqInfo = async (regionId = infaqRegionId) => {
+    if (!regionId) { setInfaqInfo({active:false,title:'Infaq Siaga Karta'}); return; }
+    try { const {data}=await api.get(`/public/infaq/${regionId}`); setInfaqInfo(data.infaq || {}); } catch { setInfaqInfo({active:false,title:'Infaq Siaga Karta'}); }
+  };
+  const loadInfaqRegions = async () => {
+    try { const {data}=await api.get('/public/infaq/regions'); setInfaqRegions(data.regions || []); } catch { setInfaqRegions([]); }
   };
   useEffect(() => { loadInfaqInfo(); }, []);
   const loadPublicRegions=async()=>{if(publicRegions.length||publicRegionsLoading)return;setPublicRegionsLoading(true);try{const {data}=await api.get('/public/regions');setPublicRegions(data.kelurahan||[]);}catch{setPublicRegions([]);}finally{setPublicRegionsLoading(false);}};
-  const openInfaq = async () => { setInfaqCode(''); setInfaqError(''); await loadInfaqInfo(); setShowInfaq(true); };
+  const openInfaq = async () => { setInfaqCode(''); setInfaqError(''); setInfaqRegionId(''); await loadInfaqRegions(); setInfaqInfo({active:false,title:'Infaq Siaga Karta'}); setShowInfaq(true); };
 
   useEffect(() => {
     const warnUnsaved = (event) => {
@@ -491,6 +499,8 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
     try {
       const form = new FormData(formElement);
       form.set('request_uuid', infaqRequestUuidRef.current);
+      if (!infaqRegionId) { throw new Error('Pilih wilayah tujuan infaq terlebih dahulu.'); }
+      form.set('region_id', infaqRegionId);
       const { data } = await api.post('/public/infaq/payments', form);
       setInfaqCode(data.payment_code);
       addToast(data.message, 'success');
@@ -789,6 +799,7 @@ const PublicView = ({ setRole, db, publicStats, addToast, refreshPublic }) => {
             <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true"/>
             {infaqError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-800"><AlertCircle className="mr-2 inline h-4 w-4"/>{infaqError}</div>}
             <div className="grid gap-5 sm:grid-cols-2">
+              <FieldGuide label="Wilayah tujuan infaq" help="Pilih wilayah penerima infaq." required><select value={infaqRegionId} onChange={e=>{setInfaqRegionId(e.target.value); loadInfaqInfo(e.target.value);}} required className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih wilayah</option>{infaqRegions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide>
               <FieldGuide label="Nama pembayar" help="Nama yang digunakan untuk pencatatan transaksi infaq." required><input name="payer_name" required minLength={3} placeholder="Nama lengkap" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
               <FieldGuide label="No. HP Aktif" help="Nomor aktif untuk verifikasi jika ada kendala pada bukti pembayaran." required><input name="payer_phone" required type="tel" pattern="(?:\+62|62|0)8[1-9][0-9]{6,11}" placeholder="08xxxxxxxxxx" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
               <FieldGuide label="Nominal infaq" help="Minimal Rp1.000. Isi angka tanpa titik atau koma." required className="sm:col-span-2"><input name="amount" required type="number" min="1000" placeholder="Contoh: 50000" className="w-full rounded-xl border border-slate-300 p-3 text-slate-900 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/20"/></FieldGuide>
@@ -828,10 +839,10 @@ const Login = ({ setRole, addToast, onLogin, demo }) => {
     </div>
     <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 relative bg-white">
       <div className="absolute top-6 right-6"><button onClick={() => setRole('warga')} className="px-5 py-2.5 bg-slate-50 text-slate-600 text-sm font-bold rounded-full border border-slate-200">Kembali ke Portal Warga</button></div>
-      <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Administrasi SIAGA KARTA</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun Kota, Kecamatan, atau Kelurahan yang telah terdaftar.</p>
+      <div className="w-full max-w-sm"><h2 className="text-3xl font-black text-slate-900 mb-2">Portal Administrasi SIAGA KARTA</h2><p className="text-slate-500 mb-10 text-sm font-medium">Masuk menggunakan akun pengelola wilayah atau Bendahara yang telah terdaftar.</p>
         <form className="space-y-5" onSubmit={handleLogin}>
-          {demo?.enabled && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-slate-900"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Akun Demo</div><p className="mt-1 text-xs leading-5 text-slate-600">Akun demo yang sama berlaku pada localhost maupun Cloudflare. Pilih akun demo untuk mengisi formulir masuk secara otomatis.</p><div className="mt-3 grid grid-cols-2 gap-2">{(demo.usernames||['kota','kecamatan','kelurahan']).map(username=><button key={username} type="button" onClick={()=>{setLoginValue(username);setPasswordValue(demo.password||'');}} className="rounded-xl border border-blue-200 bg-white px-2 py-2 text-xs font-black capitalize text-blue-800 hover:bg-blue-100">{username}</button>)}</div></div>}
-          <FieldGuide label="Email atau Nama Pengguna" help="Gunakan akun resmi Kota, Kecamatan, atau Kelurahan yang telah terdaftar." required><input name="login" required autoComplete="username" value={loginValue} onChange={e=>setLoginValue(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /></FieldGuide>
+          {demo?.enabled && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-slate-900"><div className="text-xs font-black uppercase tracking-wider text-blue-700">Akun Demo</div><p className="mt-1 text-xs leading-5 text-slate-600">Klik salah satu akun untuk mengisi username dan kata sandi demo secara otomatis.</p><div className="mt-3 grid grid-cols-2 gap-2">{(demo.accounts||[{username:'kota',label:'Kota'},{username:'kecamatan',label:'Kecamatan'},{username:'kelurahan',label:'Kelurahan'},{username:'bendahara_kota',label:'Bendahara Kota'},{username:'bendahara_kecamatan',label:'Bendahara Kecamatan'},{username:'bendahara_kelurahan',label:'Bendahara Kelurahan'}]).map(account=><button key={account.username} type="button" onClick={()=>{setLoginValue(account.username);setPasswordValue(demo.password||'');}} className="rounded-xl border border-blue-200 bg-white px-2 py-2 text-xs font-black text-blue-800 hover:bg-blue-100">{account.label||account.username}</button>)}</div></div>}
+          <FieldGuide label="Email atau Nama Pengguna" help="Gunakan akun resmi pengelola wilayah atau Bendahara yang telah terdaftar." required><input name="login" required autoComplete="username" value={loginValue} onChange={e=>setLoginValue(e.target.value)} className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /></FieldGuide>
           <FieldGuide label="Kata Sandi" help={demo?.enabled?'Kata sandi demo otomatis terisi setelah memilih akun.':'Masukkan kata sandi akun Anda. Tombol mata hanya mengubah tampilan dan tidak menyimpan kata sandi.'} required><div className="relative"><input name="password" required minLength={8} value={passwordValue} onChange={e=>setPasswordValue(e.target.value)} type={showPassword?'text':'password'} autoComplete="current-password" className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0b3b78]/20 outline-none text-sm text-slate-900" /><button type="button" aria-label={showPassword?'Sembunyikan kata sandi':'Tampilkan kata sandi'} onClick={()=>setShowPassword(v=>!v)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500"><Eye className="w-5 h-5"/></button></div></FieldGuide>
           <button disabled={loading} type="submit" className="w-full py-4 bg-[#0b3b78] hover:bg-[#092f61] text-white rounded-xl font-bold disabled:opacity-50">{loading?'Memverifikasi...':'Masuk ke Dashboard'}</button>
         </form>
@@ -892,7 +903,9 @@ const NotificationBell = ({ addToast }) => {
 const DashboardLayout = ({ role, currentUser, db, dashboardStats, updateDB, refreshDashboard, setRole, addToast, requestConfirm }) => {
   const allowedMenus = role==='kota'
     ? ['dashboard','pelayanan','ambulans','kas','laporan','users']
-    : ['dashboard','pelayanan','laporan'];
+    : role==='bendahara'
+      ? ['dashboard','kas','laporan']
+      : ['dashboard','pelayanan','kas','laporan'];
   const [activeMenu, setActiveMenu] = useState(() => {
     const saved=sessionStorage.getItem(`siagakarta_menu_${role}`) || 'dashboard';
     return allowedMenus.includes(saved)?saved:'dashboard';
@@ -963,8 +976,8 @@ const DashboardLayout = ({ role, currentUser, db, dashboardStats, updateDB, refr
     <aside className={`hidden lg:flex ${desktopCompact?'w-20':'w-64'} py-8 flex-col shrink-0 bg-gradient-to-b from-[#07132f] via-[#081a3d] to-[#050b1c] transition-all duration-300`}>{sidebarContent(false)}</aside>
     <main className="min-w-0 flex-1 flex flex-col h-[100dvh] overflow-hidden bg-[#f5f8ff] lg:rounded-l-3xl lg:shadow-[-10px_0_30px_rgba(0,0,0,0.2)]">
       <header className="min-h-16 sm:min-h-20 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 border-b border-blue-100 bg-white/90 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{navMap[activeMenu]?.label || 'Beranda'}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">Karang Taruna tingkat {roleLabel}{currentUser?.region?.name?` · ${currentUser.region.name}`:''} · sinkronisasi aktif</p></div></div>
-        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-blue-100 text-[#0b3b78] flex items-center justify-center font-black border border-blue-200 shrink-0">{role==='kota'?'KO':role==='kecamatan'?'KC':'KL'}</div></div>
+        <div className="flex items-center gap-3 min-w-0"><button onClick={()=>setMobileOpen(true)} className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700"><Menu className="w-5 h-5"/></button><div className="min-w-0"><h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight capitalize truncate">{navMap[activeMenu]?.label || 'Beranda'}</h1><p className="hidden sm:block text-sm text-slate-500 font-medium">{role==='bendahara'?'Bendahara wilayah':`Karang Taruna tingkat ${roleLabel}`}{currentUser?.region?.name?` · ${currentUser.region.name}`:''} · sinkronisasi aktif</p></div></div>
+        <div className="flex items-center gap-2"><NotificationBell addToast={addToast}/><div className="w-10 h-10 rounded-full bg-blue-100 text-[#0b3b78] flex items-center justify-center font-black border border-blue-200 shrink-0">{role==='kota'?'KO':role==='kecamatan'?'KC':role==='kelurahan'?'KL':'BD'}</div></div>
       </header>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 hide-scroll"><DashboardErrorBoundary resetKey={activeMenu}><motion.div key={activeMenu} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{duration:.22,ease:'easeOut'}} className="min-h-full">{renderContent()}</motion.div></DashboardErrorBoundary></div>
     </main>
@@ -1037,8 +1050,8 @@ const KotaMapDashboard = ({ addToast }) => {
       if(markerLayerRef.current){mapRef.current.removeLayer(markerLayerRef.current);markerLayerRef.current=null;}
 
       if(!geoJsonCacheRef.current&&mapData.geojson?.url){
-        try{const response=await fetch(mapData.geojson.url,{cache:'force-cache'});if(!response.ok)throw new Error('GeoJSON tidak dapat dimuat');geoJsonCacheRef.current=await response.json();}
-        catch(e){if(!cancelled)setError('Batas wilayah GeoJSON Kota Bandung belum dapat dimuat. Statistik database tetap tersedia.');}
+        try{const response=await fetch(mapData.geojson.url,{cache:'no-store'});if(!response.ok)throw new Error('GeoJSON tidak dapat dimuat');geoJsonCacheRef.current=await response.json();}
+        catch(e){if(!cancelled)setError('');}
       }
       if(cancelled)return;
       const statsByName=new Map((mapData.kelurahan_stats||[]).flatMap(v=>[[normalizeAreaName(v.name),v],[normalizeAreaName(v.geojson_name),v]].filter(([k])=>k)));
@@ -1118,7 +1131,7 @@ const KelurahanStructureCard=({stats,addToast})=>{
 };
 
 const ViewDashboard = ({ db, role, stats, addToast, refreshDashboard }) => {
-  const canFinance=role==='kota';
+  const canFinance=FINANCE_ROLES.includes(role);
   const canOperations=STAFF_ROLES.includes(role);
   const liveChart=stats?.daily?.length ? stats.daily : emptyChartData;
   const pendingFinance=Number(stats?.finance_pending||0);
@@ -1126,7 +1139,7 @@ const ViewDashboard = ({ db, role, stats, addToast, refreshDashboard }) => {
   useEffect(()=>{
     const onChange=()=>refreshDashboard();
     window.addEventListener('siagakarta:operations-changed',onChange);
-    if(role==='kota') window.addEventListener('siagakarta:finance-changed',onChange);
+    if(canFinance) window.addEventListener('siagakarta:finance-changed',onChange);
     return()=>{
       window.removeEventListener('siagakarta:operations-changed',onChange);
       window.removeEventListener('siagakarta:finance-changed',onChange);
@@ -1259,6 +1272,9 @@ const ViewAmbulans = ({ db, refreshDashboard, role, addToast }) => {
 };
 
 const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
+  const canFinance=FINANCE_ROLES.includes(role);
+  const canManageFinance=role!=='bendahara';
+  const isTreasurer=role==='bendahara';
   const [open,setOpen]=useState(false);
   const [detail,setDetail]=useState(null);
   const [detailLoading,setDetailLoading]=useState(false);
@@ -1269,7 +1285,7 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const [settingsSubmitting,setSettingsSubmitting]=useState(false);
   const [openSettings,setOpenSettings]=useState(false);
   const [setting,setSetting]=useState(null);
-  const loadSetting=()=>api.get('/infaq/settings').then(r=>setSetting(r.data.setting)).catch(()=>{});
+  const loadSetting=()=>api.get('/infaq/settings').then(r=>setSetting(r.data.setting?{...r.data.setting,qr_url:r.data.qr_url}:null)).catch(()=>{});
   const transactionRequestUuidRef=useRef(newRequestUuid());
   const [transactionRows,setTransactionRows]=useState([]);
   const [transactionPage,setTransactionPage]=useState(1);
@@ -1278,14 +1294,14 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const [transactionTypeFilter,setTransactionTypeFilter]=useState('');
   const [transactionLoading,setTransactionLoading]=useState(false);
   useEffect(()=>{
-    if(role!=='kota')return;
+    if(!canFinance)return;
     loadSetting();
     const onRefresh=()=>loadSetting();
     window.addEventListener('siagakarta:finance-changed',onRefresh);
     return()=>window.removeEventListener('siagakarta:finance-changed',onRefresh);
   },[role]);
   useEffect(()=>{
-    if(role!=='kota')return;
+    if(!canFinance)return;
     let cancelled=false;
     const load=async()=>{
       setTransactionLoading(true);
@@ -1297,7 +1313,7 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
     const onRefresh=()=>load();window.addEventListener('siagakarta:finance-changed',onRefresh);
     return()=>{cancelled=true;window.removeEventListener('siagakarta:finance-changed',onRefresh);};
   },[role,transactionPage,transactionStatusFilter,transactionTypeFilter]);
-  if(role!=='kota') return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Modul keuangan hanya dapat diakses pengelola Kota.</b></Card>;
+  if(!canFinance) return <Card><ShieldAlert className="w-8 h-8 mb-3"/><b>Anda tidak memiliki akses ke modul keuangan.</b></Card>;
   const submit=async(e)=>{e.preventDefault();if(transactionSubmitting)return;setTransactionSubmitting(true);try{const f=Object.fromEntries(new FormData(e.currentTarget).entries());f.request_uuid=transactionRequestUuidRef.current;f.amount=Number(f.amount);await api.post('/transactions',f);addToast('Transaksi dicatat dan menunggu verifikasi.','success');setOpen(false);transactionRequestUuidRef.current=newRequestUuid();refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}finally{setTransactionSubmitting(false);}};
   const saveSetting=async(e)=>{e.preventDefault();if(settingsSubmitting)return;setSettingsSubmitting(true);try{const form=new FormData(e.currentTarget);form.set('is_active',e.currentTarget.is_active.checked?'1':'0');await api.post('/infaq/settings',form);addToast('Pengaturan pembayaran diperbarui.','success');setOpenSettings(false);loadSetting();}catch(err){addToast(errorMessage(err),'error');}finally{setSettingsSubmitting(false);}};
   const verify=async(id)=>{try{const {data}=await api.post(`/transactions/${id}/verify`);addToast(data.message,'success');refreshDashboard();}catch(err){addToast(errorMessage(err),'error');}};
@@ -1305,8 +1321,9 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
   const openTransactionDetail=async(id)=>{const requestId=++transactionDetailRequestRef.current;setDetailLoading(true);setDetail({});try{const {data}=await api.get(`/transactions/${id}`);if(transactionDetailRequestRef.current===requestId)setDetail(data.transaction);}catch(err){if(transactionDetailRequestRef.current===requestId){setDetail(null);addToast(errorMessage(err),'error');}}finally{if(transactionDetailRequestRef.current===requestId)setDetailLoading(false);}};
   const closeTransactionDetail=()=>{transactionDetailRequestRef.current++;setDetailLoading(false);setDetail(null);};
   const viewProof=async(id)=>{const w=window.open('','_blank');try{const res=await api.get(`/transactions/${id}/proof`,{responseType:'blob'});const url=URL.createObjectURL(res.data);if(w)w.location=url;setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){if(w)w.close();addToast(errorMessage(err),'error');}};
+  const viewPrivateQr=async()=>{const w=window.open('','_blank');try{const res=await api.get('/infaq/qr',{responseType:'blob'});const url=URL.createObjectURL(res.data);if(w)w.location=url;setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){if(w)w.close();addToast(errorMessage(err),'error');}};
   return <div>
-    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Kas, Infaq & Transaksi</h2><p className="text-sm text-slate-600">Jenis pemasukan/pengeluaran kini terlihat langsung di tabel. Setiap baris selalu memiliki tombol aksi.</p></div><div className="flex flex-col sm:flex-row gap-2"><Button variant="outline" onClick={()=>{loadSetting();setOpenSettings(true);}}><QrCode className="w-4 h-4 mr-2"/>Pengaturan Pembayaran</Button><Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Transaksi</Button></div></div>
+    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6"><div><h2 className="text-2xl font-black text-slate-950">Kas, Infaq & Transaksi</h2><p className="text-sm text-slate-600">{isTreasurer?'Bendahara hanya melihat kas wilayah yang terikat ke akunnya, termasuk bukti pembayaran, rekening/QR resmi, serta transaksi pending untuk diverifikasi atau ditolak.':'Kas dipisahkan per wilayah. Akun Kota, Kecamatan, dan Kelurahan hanya melihat transaksi pada wilayahnya sendiri.'}</p></div><div className="flex flex-col sm:flex-row gap-2"><Button variant="outline" onClick={()=>{loadSetting();setOpenSettings(true);}}><QrCode className="w-4 h-4 mr-2"/>{isTreasurer?'Lihat Pembayaran':'Pengaturan Pembayaran'}</Button>{canManageFinance&&<Button onClick={()=>setOpen(true)}><Plus className="w-4 h-4 mr-2"/>Tambah Transaksi</Button>}</div></div>
     <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3"><select value={transactionTypeFilter} onChange={e=>{setTransactionTypeFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua jenis</option><option value="pemasukan">Pemasukan</option><option value="pengeluaran">Pengeluaran</option></select><select value={transactionStatusFilter} onChange={e=>{setTransactionStatusFilter(e.target.value);setTransactionPage(1);}} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"><option value="">Semua status</option><option value="pending">Menunggu Verifikasi</option><option value="verified">Terverifikasi</option><option value="rejected">Ditolak</option></select><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"><span>{transactionLoading?'Memuat data...':`${transactionMeta.total} transaksi`}</span><span>25 / halaman</span></div></div>
     <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Kode</th><th className="p-4 text-left">Tanggal</th><th className="p-4 text-left">Jenis</th><th className="p-4 text-left">Sumber</th><th className="p-4 text-left">Pembayar / Kategori</th><th className="p-4 text-left">Nominal</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!transactionLoading&&transactionRows.length===0&&<tr><td colSpan={8} className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada transaksi pada filter ini.</td></tr>}{transactionRows.map(t=><tr key={t.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-mono text-slate-950">{t.id}</td><td className="p-4">{t.tgl}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${t.tipe==='pemasukan'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{t.tipe}</span></td><td className="p-4"><span className="text-xs font-bold uppercase text-slate-700">{t.source==='public_infaq'?'Infaq Warga':'Internal'}</span></td><td className="p-4"><div className="font-medium text-slate-900">{t.payer_name||t.kategori}</div>{t.payer_phone_last4&&<div className="text-xs text-slate-500">HP ****{t.payer_phone_last4}</div>}</td><td className="p-4 font-bold text-slate-950">Rp{Number(t.nominal).toLocaleString('id-ID')}</td><td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold ${t.status==='verified'?'bg-emerald-50 text-emerald-700':t.status==='rejected'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{statusLabel(t.status)}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openTransactionDetail(t.db_id)}><Eye className="w-4 h-4 mr-1"/>Detail</Button>{t.has_proof&&<Button size="sm" variant="outline" onClick={()=>viewProof(t.db_id)}>Bukti</Button>}{t.status==='pending'&&<><Button size="sm" variant="success" onClick={()=>verify(t.db_id)}>Verifikasi</Button><Button size="sm" variant="danger" onClick={()=>setRejectTarget(t.db_id)}>Tolak</Button></>}</div></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs font-semibold text-slate-500">Halaman {transactionMeta.current_page} dari {transactionMeta.last_page}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page<=1} onClick={()=>setTransactionPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={transactionLoading||transactionMeta.current_page>=transactionMeta.last_page} onClick={()=>setTransactionPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
     <ModalForm isOpen={Boolean(detail)} onClose={closeTransactionDetail} title="Detail Transaksi">{detailLoading?<div className="py-12 text-center text-sm font-semibold text-slate-500">Memuat detail transaksi...</div>:detail&&<div className="grid gap-4 sm:grid-cols-2 text-sm"><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kode</p><p className="mt-1 font-mono font-bold text-slate-950">{detail.code}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Jenis</p><p className="mt-1 font-bold capitalize text-slate-950">{detail.type}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tanggal</p><p className="mt-1 text-slate-900">{detail.transaction_date}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold uppercase text-slate-900">{statusLabel(detail.status)}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Kategori / Pembayar</p><p className="mt-1 text-slate-900">{detail.payer_name||detail.category}</p></div><div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Nominal</p><p className="mt-1 text-xl font-black text-slate-950">Rp{Number(detail.amount).toLocaleString('id-ID')}</p></div>{detail.description&&<div className="sm:col-span-2"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Keterangan</p><p className="mt-1 leading-6 text-slate-900">{detail.description}</p></div>}{detail.rejection_reason&&<div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800"><b>Alasan penolakan:</b> {detail.rejection_reason}</div>}{detail.status_history?.length>0&&<div className="sm:col-span-2 border-t border-slate-200 pt-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Status</p><div className="mt-3 space-y-2">{detail.status_history.map((h,i)=><div key={`${h.created_at}-${i}`} className="rounded-xl bg-slate-50 p-3"><div className="text-xs font-bold text-slate-800">{h.from_status?statusLabel(h.from_status):'Awal'} → <span className="uppercase text-emerald-700">{statusLabel(h.to_status)}</span></div><div className="mt-1 text-xs text-slate-500">{h.changed_by||'Sistem'} • {new Date(h.created_at).toLocaleString('id-ID')}</div>{h.reason&&<div className="mt-1 text-xs leading-5 text-slate-700">{h.reason}</div>}</div>)}</div></div>}</div>}</ModalForm>
@@ -1319,7 +1336,13 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
       <Button disabled={transactionSubmitting} type="submit" className="w-full sm:w-auto">{transactionSubmitting?'Menyimpan...':'Simpan'}</Button>
     </form></ModalForm>
     <ModalForm isOpen={Boolean(rejectTarget)} onClose={()=>{if(!rejectSubmitting)setRejectTarget(null);}} title="Tolak Bukti Pembayaran"><form onSubmit={submitReject} className="space-y-5"><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">Penolakan hanya dapat dilakukan saat transaksi masih pending. Alasan akan disimpan agar keputusan dapat diaudit.</div><FieldGuide label="Alasan penolakan" help="Jelaskan masalah pada bukti, nominal, atau identitas pembayaran. Minimal 5 karakter." required><textarea name="reason" required minLength={5} maxLength={500} rows={4} placeholder="Contoh: nominal pada bukti tidak sesuai dengan nominal yang diajukan." className="w-full resize-none rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={rejectSubmitting} onClick={()=>setRejectTarget(null)}>Batal</Button><Button type="submit" variant="danger" disabled={rejectSubmitting}>{rejectSubmitting?'Menyimpan...':'Tolak Pembayaran'}</Button></div></form></ModalForm>
-    <ModalForm isOpen={openSettings} onClose={()=>setOpenSettings(false)} title="Pengaturan Pembayaran"><form onSubmit={saveSetting} className="space-y-5">
+    <ModalForm isOpen={openSettings} onClose={()=>setOpenSettings(false)} title={isTreasurer?'Rekening & QR Resmi':'Pengaturan Pembayaran'}>{isTreasurer?<div className="space-y-4">
+      {!setting?<div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">Pengaturan infaq belum tersedia untuk wilayah akun ini.</div>:<>
+        <div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Judul</p><p className="mt-1 font-bold text-slate-950">{setting.title||'-'}</p></div><div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Status</p><p className="mt-1 font-bold text-slate-950">{setting.is_active?'Aktif':'Nonaktif'}</p></div><div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Bank</p><p className="mt-1 text-slate-900">{setting.bank_name||'-'}</p></div><div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Nomor Rekening</p><p className="mt-1 font-mono text-slate-900">{setting.account_number||'-'}</p></div><div className="sm:col-span-2"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Nama Pemilik</p><p className="mt-1 text-slate-900">{setting.account_name||'-'}</p></div>{setting.payment_instructions&&<div className="sm:col-span-2"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Instruksi Pembayaran</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{setting.payment_instructions}</p></div>}</div>
+        {setting.has_qr&&<Button type="button" variant="outline" onClick={viewPrivateQr}><QrCode className="mr-2 h-4 w-4"/>Lihat QR Resmi</Button>}
+      </>}
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-blue-900">Mode Bendahara bersifat read-only untuk pengaturan pembayaran. Perubahan rekening atau QR tetap memerlukan permission <b>infaq.manage</b>.</div>
+    </div>:<form onSubmit={saveSetting} className="space-y-5">
       <FieldGuide label="Judul infaq" help="Judul yang tampil pada modal infaq warga." required><input name="title" required defaultValue={setting?.title||'Infaq Siaga Karta'} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
       <FieldGuide label="Deskripsi" help="Jelaskan tujuan penggunaan dana secara singkat dan transparan."><textarea name="description" defaultValue={setting?.description||''} rows={3} className="w-full p-3 border border-slate-300 rounded-xl text-slate-900"/></FieldGuide>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -1332,7 +1355,7 @@ const ViewKas = ({ db, refreshDashboard, role, addToast }) => {
       {setting?.has_qr&&<label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4"><input name="remove_qr" type="checkbox" value="1" className="mt-1 w-4 h-4"/><span><span className="block text-sm font-bold text-slate-900">Hapus QR lama</span><span className="mt-1 block text-xs text-slate-500">Centang hanya jika pembayaran akan memakai rekening tanpa QR, atau QR lama memang tidak berlaku.</span></span></label>}
       <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4"><input name="is_active" type="checkbox" defaultChecked={Boolean(setting?.is_active)} className="mt-1 w-4 h-4"/><span><span className="block text-sm font-bold text-slate-900">Aktifkan pembayaran infaq publik</span><span className="mt-1 block text-xs leading-5 text-slate-500">Jika aktif, warga dapat melihat QR dan/atau rekening resmi lalu mengirim bukti pembayaran.</span></span></label>
       <Button disabled={settingsSubmitting} type="submit" className="w-full sm:w-auto">{settingsSubmitting?'Menyimpan...':'Simpan Pengaturan'}</Button>
-    </form></ModalForm>
+    </form>}</ModalForm>
   </div>;
 };
 
@@ -1340,6 +1363,7 @@ const ViewUsers = ({ addToast }) => {
   const [users,setUsers]=useState([]);
   const [districts,setDistricts]=useState([]);
   const [villages,setVillages]=useState([]);
+  const [financeRegions,setFinanceRegions]=useState([]);
   const [page,setPage]=useState(1);
   const [meta,setMeta]=useState({current_page:1,last_page:1,total:0});
   const [loading,setLoading]=useState(false);
@@ -1366,6 +1390,12 @@ const ViewUsers = ({ addToast }) => {
       setDistricts(data.regions||[]);
     }catch(e){addToast(errorMessage(e),'error');}
   };
+  const loadFinanceRegions=async()=>{
+    try{
+      const {data}=await api.get('/regions');
+      setFinanceRegions(data.regions||[]);
+    }catch(e){addToast(errorMessage(e),'error');}
+  };
   const loadVillages=async(districtId, preferredRegionId='')=>{
     if(!districtId){setVillages([]);setFormRegionId('');return;}
     setRegionLoading(true);
@@ -1378,7 +1408,7 @@ const ViewUsers = ({ addToast }) => {
     finally{setRegionLoading(false);}
   };
 
-  useEffect(()=>{loadDistricts();},[]);
+  useEffect(()=>{loadDistricts();loadFinanceRegions();},[]);
   useEffect(()=>{
     loadUsers();
     const onRefresh=()=>loadUsers();
@@ -1437,12 +1467,13 @@ const ViewUsers = ({ addToast }) => {
   };
   const toggleActive=async u=>{try{await api.patch(`/users/${u.id}`,{is_active:!u.is_active});addToast(`Akun ${u.is_active?'dinonaktifkan':'diaktifkan'}.`,'success');loadUsers();}catch(err){addToast(errorMessage(err),'error');}};
 
-  return <div><div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna & Wilayah</h2><p className="text-sm text-slate-600">Akun Kecamatan dan Kelurahan dibuat dengan pilihan wilayah bertingkat agar tidak salah mengikat hak akses.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="mr-2 h-4 w-4"/>Tambah Pengguna</Button></div>
+  return <div><div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-slate-950">Manajemen Pengguna & Wilayah</h2><p className="text-sm text-slate-600">Akun Kecamatan, Kelurahan, dan Bendahara diikat ke wilayah tertentu agar akses kas dan pelayanan tidak bercampur antarwilayah.</p><p className="mt-1 text-xs font-semibold text-slate-500">{loading?'Memuat...':`${meta.total} akun terdaftar`}</p></div><Button onClick={openCreate}><Plus className="mr-2 h-4 w-4"/>Tambah Pengguna</Button></div>
     <Card noPadding><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-sm"><thead><tr className="bg-slate-50 text-slate-700"><th className="p-4 text-left">Nama</th><th className="p-4 text-left">Username</th><th className="p-4 text-left">Email</th><th className="p-4 text-left">Peran</th><th className="p-4 text-left">Wilayah</th><th className="p-4 text-left">Status</th><th className="p-4 text-right">Aksi</th></tr></thead><tbody>{!loading&&users.length===0&&<tr><td colSpan={7} className="p-10 text-center text-sm font-semibold text-slate-500">Belum ada akun pada halaman ini.</td></tr>}{users.map(u=><tr key={u.id} className="border-t border-slate-100 text-slate-800"><td className="p-4 font-semibold text-slate-950">{u.name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.email}</td><td className="p-4 font-bold text-xs">{roleDisplay(u.role)}</td><td className="p-4"><div className="font-bold text-slate-900">{u.region?.name||'-'}</div><div className="text-xs text-slate-500">{u.region?.code||''}</div></td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${u.is_active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.is_active?'Aktif':'Nonaktif'}</span></td><td className="p-4"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={()=>openEdit(u)}><Settings className="mr-1 h-4 w-4"/>Edit</Button>{u.role!=='kota'&&<Button size="sm" variant={u.is_active?'danger':'success'} onClick={()=>toggleActive(u)}>{u.is_active?'Nonaktifkan':'Aktifkan'}</Button>}</div></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-4"><span className="text-xs font-semibold text-slate-500">Halaman {meta.current_page} dari {meta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading||meta.current_page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Sebelumnya</Button><Button size="sm" variant="outline" disabled={loading||meta.current_page>=meta.last_page} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div></Card>
     <ModalForm isOpen={open} onClose={()=>{setOpen(false);setEditing(null);setFormDistrictId('');setFormRegionId('');setVillages([]);}} title={editing?'Edit Pengguna':'Tambah Pengguna'}><form onSubmit={submit} className="space-y-5"><FieldGuide label="Nama lengkap" required><input name="name" required defaultValue={editing?.name||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Username" required><input name="username" required minLength={4} defaultValue={editing?.username||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><FieldGuide label="Email akun" required><input name="email" type="email" required defaultValue={editing?.email||''} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide>
-      <FieldGuide label="Tingkat Karang Taruna" help="Hak akses mengikuti tingkat akun dan wilayah yang dipilih." required><select name="role" value={formRole} onChange={changeRole} disabled={editing?.role==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900">{editing?.role==='kota'&&<option value="kota">Kota</option>}{editing?.role!=='kota'&&<><option value="kecamatan">Kecamatan</option><option value="kelurahan">Kelurahan</option></>}</select></FieldGuide>
+      <FieldGuide label="Tingkat Karang Taruna" help="Hak akses mengikuti tingkat akun dan wilayah yang dipilih." required><select name="role" value={formRole} onChange={changeRole} disabled={editing?.role==='kota'} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900">{editing?.role==='kota'&&<option value="kota">Kota</option>}{editing?.role!=='kota'&&<><option value="kecamatan">Kecamatan</option><option value="kelurahan">Kelurahan</option><option value="bendahara">Bendahara</option></>}</select></FieldGuide>
       {formRole==='kecamatan'&&<FieldGuide label="Kecamatan" help="Pilih satu kecamatan sebagai cakupan utama akun." required><select name="region_id" required value={formRegionId} onChange={changeDistrict} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih kecamatan</option>{districts.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide>}
       {formRole==='kelurahan'&&<><FieldGuide label="Kecamatan" help="Pilih kecamatan terlebih dahulu untuk menyaring daftar kelurahan." required><select required value={formDistrictId} onChange={changeDistrict} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih kecamatan</option>{districts.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide><FieldGuide label="Kelurahan" help={regionLoading?'Memuat kelurahan...':'Daftar hanya menampilkan kelurahan di kecamatan terpilih.'} required><select name="region_id" required value={formRegionId} onChange={e=>setFormRegionId(e.target.value)} disabled={!formDistrictId||regionLoading} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">{regionLoading?'Memuat...':'Pilih kelurahan'}</option>{villages.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></FieldGuide></>}
+      {formRole==='bendahara'&&<FieldGuide label="Wilayah kas Bendahara" help="Pilih tepat satu wilayah. Bendahara hanya dapat melihat, memverifikasi, menolak, dan mengekspor transaksi pada wilayah ini." required><select name="region_id" required value={formRegionId} onChange={e=>setFormRegionId(e.target.value)} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"><option value="">Pilih wilayah</option>{financeRegions.map(r=><option key={r.id} value={r.id}>{roleDisplay(r.level)} · {r.name}</option>)}</select></FieldGuide>}
       {formRole==='kota'&&<div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm font-semibold text-blue-800">Akun Kota utama tetap terikat pada Kota Bandung dan tidak dapat dipindahkan ke wilayah lain dari panel ini.</div>}
       <FieldGuide label={editing?'Password baru':'Password'} help={editing?'Kosongkan jika tidak diubah. Minimal 10 karakter.':'Minimal 10 karakter.'} required={!editing}><input name="password" type="password" minLength={10} required={!editing} className="w-full rounded-xl border border-slate-300 p-3 text-slate-900"/></FieldGuide><Button type="submit" disabled={submitting||regionLoading}>{submitting?'Menyimpan...':editing?'Simpan Perubahan':'Simpan Pengguna'}</Button></form></ModalForm>
   </div>;
@@ -1454,7 +1485,7 @@ const ViewLaporan = ({ addToast, role }) => {
     <Card className="mb-6 border-transparent shadow-lg bg-gradient-to-br from-[#0b3b78] to-[#07132f] text-white"><div className="flex items-center gap-4 sm:gap-5"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0"><FileSpreadsheet className="w-7 h-7 text-cyan-200"/></div><div><h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1">Unduh Laporan Sistem</h2><p className="text-blue-100/90 text-sm font-medium">Pilih format laporan yang diperlukan. File akan diunduh langsung tanpa membuka halaman cetak.</p></div></div></Card>
     <div className="grid gap-4">
       {STAFF_ROLES.includes(role)&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg">Laporan Pelayanan Warga</div><div className="text-sm text-slate-500 mt-1">Mencakup 10 kategori pengaduan, prioritas, wilayah, tahapan validasi Kelurahan → Kecamatan → Kota, status, dan OPD tujuan.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/pelayanan.pdf','laporan-pelayanan-warga.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/pelayanan.csv','laporan-pelayanan-warga.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
-      {role==='kota'&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
+      {FINANCE_ROLES.includes(role)&&<Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">Laporan Keuangan & Kas Infaq <ShieldCheck className="w-5 h-5 text-emerald-600"/></div><div className="text-sm text-slate-500 mt-1">Mencakup infaq warga, bukti yang sudah diverifikasi, dan transaksi internal sesuai scope wilayah akun.</div></div><div className="grid grid-cols-2 sm:flex gap-2"><Button size="sm" variant="outline" onClick={()=>download('/exports/keuangan.pdf','laporan-keuangan.pdf')}><Download className="w-4 h-4 mr-2"/>PDF</Button><Button size="sm" onClick={()=>download('/exports/keuangan.csv','laporan-keuangan.csv')}><Download className="w-4 h-4 mr-2"/>Excel/CSV</Button></div></Card>}
     </div>
   </div>;
 };
@@ -1538,7 +1569,7 @@ export default function App() {
     }catch(err){ if(err?.response?.status!==401) console.warn('Session refresh failed'); }
   };
   const checkSync=async()=>{
-    if(!getToken() || document.visibilityState!=='visible' || !STAFF_ROLES.includes(role)) return;
+    if(!getToken() || document.visibilityState!=='visible' || !INTERNAL_ROLES.includes(role)) return;
     try{
       const {data}=await api.get('/sync',{params:{_ts:Date.now()}});
       const nextRevisions=data.revisions||{};
@@ -1608,7 +1639,7 @@ export default function App() {
   },[role]);
 
   useEffect(()=>{
-    if(!STAFF_ROLES.includes(role)) return;
+    if(!INTERNAL_ROLES.includes(role)) return;
     revisionRef.current=null;
     notificationSignatureRef.current=null;
     refreshDashboard();
@@ -1642,6 +1673,6 @@ export default function App() {
     <DeveloperWatermark/>
     {role==='warga'&&<PublicView setRole={setRole} db={db} publicStats={publicStats} addToast={addToast} refreshPublic={loadPublic}/>}
     {role==='login'&&<Login setRole={setRole} addToast={addToast} onLogin={setCurrentUser} demo={publicStats.demo}/>}
-    {STAFF_ROLES.includes(role)&&<DashboardLayout role={role} currentUser={currentUser} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>}
+    {INTERNAL_ROLES.includes(role)&&<DashboardLayout role={role} currentUser={currentUser} db={db} dashboardStats={dashboardStats} updateDB={updateDB} refreshDashboard={refreshDashboard} setRole={setRole} addToast={addToast} requestConfirm={requestConfirm}/>}
   </>;
 }

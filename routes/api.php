@@ -1,5 +1,6 @@
 <?php
 use App\Http\Controllers\Api\AmbulanceController;
+use App\Http\Controllers\Api\AmbulanceTrackingController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExportController;
@@ -20,8 +21,9 @@ Route::prefix('public')->group(function(){
     Route::get('/reports/{code}',[PublicController::class,'track'])->middleware('throttle:20,1');
     Route::post('/bot',[PublicController::class,'bot'])->middleware('throttle:30,1');
     Route::get('/regions',[PublicController::class,'regions'])->middleware('throttle:60,1');
-    Route::get('/infaq',[InfaqController::class,'publicInfo'])->middleware('throttle:60,1');
+    Route::get('/infaq/regions',[PublicController::class,'infaqRegions'])->middleware('throttle:60,1');
     Route::get('/infaq/qr',[InfaqController::class,'publicQr'])->middleware('throttle:60,1');
+    Route::get('/infaq/{region}',[InfaqController::class,'publicInfo'])->middleware('throttle:60,1');
     Route::post('/infaq/payments',[InfaqController::class,'submitPayment'])->middleware('throttle:5,1');
 });
 
@@ -53,6 +55,7 @@ Route::middleware('api.token')->group(function(){
 
     Route::middleware(['role:kota','permission:operations.view'])->group(function(){
         Route::get('/ambulances',[AmbulanceController::class,'index']);
+        Route::get('/ambulances/availability',[AmbulanceController::class,'availability']);
         Route::get('/programs',[ProgramController::class,'index']);
         Route::get('/exports/ambulans.csv',[ExportController::class,'ambulanceCsv']);
         Route::get('/exports/ambulans.pdf',[ExportController::class,'ambulancePdf']);
@@ -96,14 +99,22 @@ Route::middleware('api.token')->group(function(){
         Route::get('/exports/keuangan.csv',[ExportController::class,'financeCsv']);
         Route::get('/exports/keuangan.pdf',[ExportController::class,'financePdf']);
     });
-    Route::middleware('permission:finance.manage')->group(function(){
+    Route::middleware('permission:finance.create')->group(function(){
         Route::post('/transactions',[FinanceController::class,'store']);
-        Route::post('/transactions/{transaction}/verify',[FinanceController::class,'verify']);
-        Route::post('/transactions/{transaction}/reject',[FinanceController::class,'reject']);
     });
-    Route::middleware('permission:payment.manage')->group(function(){
-        Route::get('/infaq/settings',[InfaqController::class,'settings']);
-        Route::post('/infaq/settings',[InfaqController::class,'updateSettings']);
-        Route::get('/infaq/qr',[InfaqController::class,'privateQr']);
-    });
+    Route::post('/transactions/{transaction}/verify',[FinanceController::class,'verify'])->middleware('permission:finance.verify');
+    Route::post('/transactions/{transaction}/reject',[FinanceController::class,'reject'])->middleware('permission:finance.reject');
+    Route::post('/transactions/{transaction}/cancel-request',[FinanceController::class,'cancelRequest'])->middleware('permission:finance.cancel.request');
+    Route::post('/cancellation/{request}/approve',[FinanceController::class,'approveCancellation'])->middleware('permission:finance.cancel.approve');
+    Route::post('/cancellation/{request}/reject',[FinanceController::class,'rejectCancellation'])->middleware('permission:finance.cancel.approve');
+    // Read-only access is available to managers and bendahara. Keep write access
+    // strictly behind infaq.manage so infaq.view never escalates to configuration changes.
+    Route::get('/infaq/settings',[InfaqController::class,'settings'])->middleware('permission:infaq.manage,infaq.view');
+    Route::get('/infaq/qr',[InfaqController::class,'privateQr'])->middleware('permission:infaq.manage,infaq.view');
+    Route::post('/infaq/settings',[InfaqController::class,'updateSettings'])->middleware('permission:infaq.manage');
+});
+
+Route::middleware(['api.token','permission:ambulance.manage'])->group(function(){
+    Route::patch('/ambulances/{ambulance}/location',[AmbulanceTrackingController::class,'update']);
+    Route::get('/ambulances/{ambulance}/location',[AmbulanceTrackingController::class,'show']);
 });

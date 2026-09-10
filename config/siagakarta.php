@@ -9,7 +9,7 @@ return [
         'max_active_tokens' => (int) env('AUTH_MAX_ACTIVE_TOKENS', 8),
     ],
     'map' => [
-        'bandung_kelurahan_geojson_url' => env('BANDUNG_KELURAHAN_GEOJSON_URL', 'https://github.com/tryfatur/geojson-bandung/raw/refs/heads/master/3273-kota-bandung-level-kelurahan.json'),
+        'bandung_kelurahan_geojson_url' => env('BANDUNG_KELURAHAN_GEOJSON_URL', ''),
         'region_api_base_url' => rtrim(env('BANDUNG_REGION_API_BASE_URL', 'https://wilayah.id/api'), '/'),
     ],
     'performance' => [

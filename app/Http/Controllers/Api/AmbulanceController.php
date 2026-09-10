@@ -17,6 +17,19 @@ class AmbulanceController extends Controller
         RevisionService::bump('operations'); Cache::forget('public.bootstrap');
         return response()->json($a,201);
     }
+
+    public function availability(Request $r)
+    {
+        $items=Ambulance::query()->get()->map(function($a){
+            return [
+                'id'=>$a->id,'code'=>$a->code,'plate_number'=>$a->plate_number,
+                'status'=>$a->status,'available'=>$a->status==='tersedia',
+                'label'=>match($a->status){'tersedia'=>'AVAILABLE','bertugas'=>'SEDANG DIGUNAKAN','dipesan'=>'DIPESAN','maintenance'=>'MAINTENANCE',default=>strtoupper((string)$a->status)}
+            ];
+        });
+        return response()->json(['ambulances'=>$items]);
+    }
+
     public function update(Request $r,Ambulance $ambulance)
     {
         $d=$r->validate(['plate_number'=>'sometimes|string|max:20|unique:ambulances,plate_number,'.$ambulance->id,'capacity'=>'sometimes|integer|min:1|max:10','status'=>'sometimes|in:tersedia,dipesan,bertugas,maintenance','notes'=>'nullable|string|max:1000']);

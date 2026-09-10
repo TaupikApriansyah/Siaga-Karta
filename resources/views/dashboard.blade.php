@@ -8,6 +8,18 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
+            <!-- Modul SIAGA KARTA -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <div class="bg-white shadow-sm rounded-lg p-6">
+                    <h3 class="font-bold text-gray-800 mb-2">Layanan Warga</h3>
+                    <p class="text-sm text-gray-600">Pengaduan, verifikasi, monitoring proses, dan penyelesaian laporan warga.</p>
+                </div>
+                <div class="bg-white shadow-sm rounded-lg p-6">
+                    <h3 class="font-bold text-gray-800 mb-2">Administrasi Internal</h3>
+                    <p class="text-sm text-gray-600">Pengelolaan kas {{ Str::ucfirst(auth()->user()->role) }} secara terpisah dan internal.</p>
+                </div>
+            </div>
+
             <!-- Metrics -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 border-l-4 border-blue-500">

@@ -1,0 +1,10 @@
+Siaga Karta v23 Final Security Hardening
+
+Applied:
+- RegionScope exact region isolation restored.
+- RegionScope now validates active region.
+- Composer build blocker identified:
+  composer.json requires barryvdh/laravel-dompdf but composer.lock does not contain it.
+
+Required before Docker build:
+composer update barryvdh/laravel-dompdf --with-all-dependencies

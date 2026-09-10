@@ -1,0 +1,5 @@
+Siaga Karta v23 security patch applied:
+- RegionScope restored exact region isolation.
+- Infaq proof uses same region scope.
+- Cancellation approval/rejection protected by region, status guards, transaction locking.
+- Ambulance location routes use project auth middleware api.token.

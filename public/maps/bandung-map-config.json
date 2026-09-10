@@ -1,0 +1,15 @@
+{
+  "provider": "mapcn",
+  "engine": "maplibre-gl",
+  "city": "Kota Bandung",
+  "center": [-6.914744,107.609810],
+  "zoom": 12,
+  "maxBounds": [[107.530, -6.980],[107.740,-6.830]],
+  "allowedRegion": "Kota Bandung",
+  "layers": {
+    "boundary": true,
+    "ambulance": true,
+    "complaints": true,
+    "heatmap": true
+  }
+}

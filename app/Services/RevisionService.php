@@ -36,7 +36,8 @@ class RevisionService
     {
         $wanted = match ($role) {
             'kota' => ['operations','finance','users','settings'],
-            'kecamatan', 'kelurahan' => ['operations'],
+            'kecamatan', 'kelurahan' => ['operations','finance','settings'],
+            'bendahara' => ['finance','settings'],
             default => [],
         };
         if (!$wanted) return [];

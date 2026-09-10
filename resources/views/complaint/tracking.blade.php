@@ -47,7 +47,7 @@
                                 @if($complaint->status == 'Selesai') bg-green-100 text-green-800 
                                 @elseif($complaint->status == 'Diterima') bg-gray-200 text-gray-800
                                 @else bg-blue-100 text-blue-800 @endif">
-                                {{ $complaint->status }}
+                                {{ match($complaint->status) { 'Diterima' => 'Laporan diterima', 'Diverifikasi' => 'Sedang diverifikasi', 'Divalidasi','Diproses' => 'Sedang ditindaklanjuti', 'Selesai' => 'Selesai', default => $complaint->status } }}
                             </span>
                         </div>
                         

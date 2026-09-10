@@ -42,7 +42,17 @@ class PublicController extends Controller
                 'report_priorities'=>Report::PRIORITIES,
                 'demo'=>filter_var(env('DEMO_MODE',false), FILTER_VALIDATE_BOOL) ? [
                     'enabled'=>true,
-                    'usernames'=>['kota','kecamatan','kelurahan'],
+                    // Keep usernames for backward compatibility, while accounts supplies
+                    // explicit labels for one-click demo selection in the login UI.
+                    'usernames'=>['kota','kecamatan','kelurahan','bendahara_kota','bendahara_kecamatan','bendahara_kelurahan'],
+                    'accounts'=>[
+                        ['username'=>'kota','label'=>'Kota'],
+                        ['username'=>'kecamatan','label'=>'Kecamatan'],
+                        ['username'=>'kelurahan','label'=>'Kelurahan'],
+                        ['username'=>'bendahara_kota','label'=>'Bendahara Kota'],
+                        ['username'=>'bendahara_kecamatan','label'=>'Bendahara Kecamatan'],
+                        ['username'=>'bendahara_kelurahan','label'=>'Bendahara Kelurahan'],
+                    ],
                     'password'=>(string)env('DEMO_PASSWORD','Rajawali21'),
                 ] : ['enabled'=>false],
             ];
@@ -55,6 +65,17 @@ class PublicController extends Controller
             ->with('parent:id,code,short_code,name,level')
             ->orderBy('name')->get(['id','code','short_code','name','parent_id']);
         return response()->json(['kelurahan'=>$rows]);
+    }
+
+    public function infaqRegions()
+    {
+        $rows=Region::query()->whereIn('level',['kecamatan','kelurahan'])
+            ->where('is_active',true)
+            ->whereHas('infaqSetting',fn($q)=>$q->where('is_active',true))
+            ->with('parent:id,code,short_code,name,level')
+            ->orderBy('level')->orderBy('name')
+            ->get(['id','code','short_code','name','level','parent_id']);
+        return response()->json(['regions'=>$rows]);
     }
 
     public function storeReport(Request $request)
@@ -132,12 +153,12 @@ class PublicController extends Controller
                 $report=Report::create([
                     'request_uuid'=>$data['request_uuid']??null,'code'=>$code,'tracking_key_hash'=>hash('sha256',$code),'citizen_id'=>$citizen->id,
                     'region_id'=>$region->id,'type'=>$data['type'],'category'=>$category,'priority'=>$data['priority'],'source'=>'website','status'=>'menunggu',
-                    'workflow_status'=>'menunggu_kelurahan','escalation_level'=>'kelurahan','pickup_location'=>$data['pickup_location']??null,
+                    'workflow_status'=>'diterima_kota','escalation_level'=>'kota','kota_received_at'=>now(),'pickup_location'=>$data['pickup_location']??null,
                     'rt_number'=>$data['rt_number']??null,'rw_number'=>$data['rw_number']??null,'latitude'=>$data['latitude']??null,'longitude'=>$data['longitude']??null,
                     'destination'=>$data['destination']??null,'medical_condition'=>$data['medical_condition']??null,'description'=>$data['description']??null,
                     'scheduled_at'=>$data['scheduled_at']??null,'service_start_at'=>$start,'service_end_at'=>$end,'ktp_path'=>$ktpPath,
                 ]);
-                StatusHistoryService::record($request,$report,null,'menunggu_kelurahan');
+                StatusHistoryService::record($request,$report,null,'diterima_kota');
                 return $report;
             },3);
         } catch(\Throwable $e) {
@@ -152,7 +173,7 @@ class PublicController extends Controller
         RevisionService::bump('operations');
         Cache::forget('public.bootstrap');
         $mailSent=CitizenTrackingMailService::sendCreated($report);
-        $message='Pengaduan berhasil diterima dan masuk ke Karang Taruna tingkat Kelurahan untuk verifikasi awal.';
+        $message='Pengaduan berhasil diterima oleh Karang Taruna tingkat Kota. Kecamatan hanya berfungsi sebagai monitoring wilayah.';
         if($mailSent) $message.=' Kode pelacakan telah dikirim ke Gmail warga.';
         else $message.=' Kode pelacakan tersedia di layar; pengiriman Gmail belum berhasil dan dapat dicoba kembali setelah konfigurasi email aktif.';
 

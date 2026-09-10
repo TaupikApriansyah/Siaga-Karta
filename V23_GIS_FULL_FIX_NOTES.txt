@@ -1,0 +1,4 @@
+Siaga Karta v23 GIS Full Fix patch
+- Added MapLibre dependency
+- Replaced Leaflet OSM initialization with MapLibre bounded map initialization
+- Added GeoJSON asset directory placeholders for Bandung administration layers
