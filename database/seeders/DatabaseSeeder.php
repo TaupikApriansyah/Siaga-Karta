@@ -138,5 +138,8 @@ class DatabaseSeeder extends Seeder
                 'is_active'=>true,'updated_by'=>$kota->id,
             ]);
         }
+        // $this->call([
+        //     UserSeeder::class,
+        // ]);
     }
 }
